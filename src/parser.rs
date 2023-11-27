@@ -28,51 +28,18 @@ impl Parser {
     }
 
     fn parse_select_statement(&mut self) -> Result<Statement> {
-        let distinct = if self.next_if_token(TokenType::Keyword(Keyword::Distinct)) {
-            Some(self.parse_distinct_statment()?)
-        } else {
-            None
-        };
-
         let columns = self.parse_columns()?;
 
         let from = self.parse_from_statment()?;
 
-        let r#where = if self.next_if_token(TokenType::Keyword(Keyword::Where)) {
-            // TODO
-            todo!()
-        } else {
-            None
-        };
-
-        let group_by = if self.next_if_token(TokenType::Keyword(Keyword::Group)) {
-            // TODO
-            todo!()
-        } else {
-            None
-        };
-
         Ok(Statement::Select {
-            distinct,
+            distinct: None,
             columns,
             from,
             // TODO
-            r#where,
-            group_by,
+            r#where: None,
+            group_by: None,
         })
-    }
-
-    fn next_if_token(&mut self, token: TokenType) -> bool {
-        if let Some(t) = self.lexer.peek() {
-            if t.token_type == token {
-                self.lexer.next();
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        }
     }
 
     fn parse_columns(&mut self) -> Result<Vec<(ast::Expression, Option<String>)>> {
@@ -80,20 +47,22 @@ impl Parser {
 
         loop {
             let expr = self.parse_expression()?;
+            let alias = if self
+                .next_if_token(TokenType::Keyword(Keyword::As))
+                .is_some()
+            {
+                Some(self.parse_expression()?.to_string())
+            } else {
+                None
+            };
+            columns.push((expr, alias));
 
-            // TODO parse alias
-            columns.push((expr, None));
-
-            if !self.next_if_token(TokenType::Comma) {
+            if self.next_if_token(TokenType::Comma).is_none() {
                 break;
             }
         }
 
         Ok(columns)
-    }
-
-    fn parse_distinct_statment(&mut self) -> Result<ast::Distinct> {
-        todo!()
     }
 
     fn parse_from_statment(&mut self) -> Result<ast::From> {
@@ -109,6 +78,10 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expression> {
+        if let Some(prefix) = self.next_if_operator::<PrefixOperator>() {
+            return Ok(prefix.build(self.parse_expression()?));
+        }
+
         match self.lexer.next().ok_or(Error::UnexpectedEOF)? {
             Token {
                 token_type: TokenType::Ident,
@@ -120,23 +93,105 @@ impl Parser {
             } => Ok(ast::Expression::Literal(ast::Literal::String(
                 "*".to_owned(),
             ))),
+            Token {
+                token_type: TokenType::Int,
+                literal,
+            } => Ok(ast::Expression::Literal(ast::Literal::Int(
+                literal.parse().map_err(|e| Error::ParseIntError(e))?,
+            ))),
             token => Err(Error::UnexpectedToken(token)),
+        }
+    }
+
+    fn next_if_operator<O: Operator>(&mut self) -> Option<O> {
+        self.lexer.peek().filter(|t| match t.token_type {
+            TokenType::Plus | TokenType::Minus | TokenType::Bang => true,
+            _ => false,
+        })?;
+        O::from(&self.lexer.next()?)
+    }
+
+    fn next_if_token(&mut self, token: TokenType) -> Option<Token> {
+        self.lexer.peek().filter(|t| t.token_type == token)?;
+        self.lexer.next()
+    }
+}
+
+trait Operator: Sized {
+    fn from(token: &Token) -> Option<Self>;
+}
+
+enum PrefixOperator {
+    Plus,
+    Minus,
+    Not,
+}
+
+impl Operator for PrefixOperator {
+    fn from(token: &Token) -> Option<Self> {
+        match token.token_type {
+            TokenType::Plus => Some(PrefixOperator::Plus),
+            TokenType::Minus => Some(PrefixOperator::Minus),
+            TokenType::Bang => Some(PrefixOperator::Not),
+            _ => None,
+        }
+    }
+}
+
+impl PrefixOperator {
+    fn build(&self, rhs: Expression) -> Expression {
+        match self {
+            PrefixOperator::Plus => Expression::Operator(ast::Operator::Pos(Box::new(rhs))),
+            PrefixOperator::Minus => Expression::Operator(ast::Operator::Neg(Box::new(rhs))),
+            PrefixOperator::Not => Expression::Operator(ast::Operator::Not(Box::new(rhs))),
+        }
+    }
+}
+
+enum InfixOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+    Eq,
+    NotEq,
+    And,
+    Or,
+}
+
+impl Operator for InfixOperator{
+    fn from(token: &Token) -> Option<Self> {
+        match token.token_type{
+            TokenType::Plus => Some(InfixOperator::Add),
+            TokenType::Minus => Some(InfixOperator::Sub),
+            TokenType::Asterisk => Some(InfixOperator::Mul),
+            TokenType::Slash => Some(InfixOperator::Div),
+            TokenType::Gt => Some(InfixOperator::Gt),
+            TokenType::Gte => Some(InfixOperator::Gte),
+            TokenType::Lt => Some(InfixOperator::Lt),
+            TokenType::Lte => Some(InfixOperator::Lte),
+            TokenType::Eq => Some(InfixOperator::Eq),
+            TokenType::NotEq => Some(InfixOperator::NotEq),
+            TokenType::And => Some(InfixOperator::And),
+            TokenType::Or => Some(InfixOperator::Or),
+            _ => None,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ast;
-
     use super::Parser;
+    use crate::ast::{self, Expression, Statement};
+    use crate::error::Result;
 
     #[test]
     fn test_parse_select_statement() {
-        let sql = String::from("SELECT * FROM users;");
-        let mut parser = Parser::new(sql);
-
-        let stmt = parser.parse().unwrap();
+        let stmt = parse_stmt("SELECT * FROM users;").unwrap();
 
         assert_eq!(
             stmt,
@@ -144,7 +199,7 @@ mod tests {
                 distinct: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None
+                    None,
                 )],
                 from: ast::From::Table {
                     name: String::from("users"),
@@ -154,5 +209,138 @@ mod tests {
                 group_by: None,
             }
         );
+    }
+
+    #[test]
+    fn test_parse_ident() {
+        let stmt = parse_expr("foobar").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Literal(ast::Literal::String("foobar".to_owned()))
+        );
+    }
+
+    #[test]
+    fn test_parse_integer() {
+        let stmt = parse_expr("123").unwrap();
+
+        assert_eq!(stmt, Expression::Literal(ast::Literal::Int(123)));
+    }
+
+    #[test]
+    fn test_parse_prefix_expression() {
+        let stmt = parse_expr("-123").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Operator(ast::Operator::Neg(Box::new(Expression::Literal(
+                ast::Literal::Int(123)
+            ))))
+        );
+    }
+
+    #[test]
+    fn test_parse_infix_expression() {
+        let tests = vec![
+            (
+                "1 + 2",
+                Expression::Operator(ast::Operator::Add(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(2))),
+                )),
+            ),
+            (
+                "1 - 2",
+                Expression::Operator(ast::Operator::Sub(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(2))),
+                )),
+            ),
+            (
+                "1 / 1",
+                Expression::Operator(ast::Operator::Div(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 * 5",
+                Expression::Operator(ast::Operator::Mul(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(5))),
+                )),
+            ),
+            (
+                "1 = 1",
+                Expression::Operator(ast::Operator::Eq(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 != 1",
+                Expression::Operator(ast::Operator::NotEq(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 > 1",
+                Expression::Operator(ast::Operator::Gt(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 >= 1",
+                Expression::Operator(ast::Operator::Gte(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 < 1",
+                Expression::Operator(ast::Operator::Lt(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 <= 1",
+                Expression::Operator(ast::Operator::Lte(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 AND 1",
+                Expression::Operator(ast::Operator::And(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+            (
+                "1 OR 1",
+                Expression::Operator(ast::Operator::Or(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                )),
+            ),
+        ];
+
+        for test in tests {
+            assert_eq!(parse_expr(test.0).unwrap(), test.1)
+        }
+    }
+
+    fn parse_stmt(input: &str) -> Result<Statement> {
+        let mut parser = Parser::new(input.to_owned());
+        parser.parse()
+    }
+
+    fn parse_expr(input: &str) -> Result<Expression> {
+        let mut parser = Parser::new(input.to_owned());
+        parser.parse_expression()
     }
 }

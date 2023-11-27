@@ -6,4 +6,5 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     UnexpectedEOF,
     UnexpectedToken(Token),
+    ParseIntError(std::num::ParseIntError),
 }

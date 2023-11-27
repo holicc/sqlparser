@@ -21,20 +21,14 @@ pub enum Keyword {
 pub enum TokenType {
     ILLIGAL,
     EOF,
-    /// Identifiers + literals
+    // Identifiers + literals
     Ident,
     Int,
 
-    /// Operators
+    // Operators
     Assign,
     Plus,
     Minus,
-
-    /// Delimiters
-    Comma,
-    Semicolon,
-    Bang,
-
     LParen,
     RParen,
     LBrace,
@@ -45,8 +39,15 @@ pub enum TokenType {
     Gt,
     Eq,
     NotEq,
+    And,
+    Or,
     Lte,
     Gte,
+
+    // Delimiters
+    Comma,
+    Semicolon,
+    Bang,
 
     Keyword(Keyword),
 }
@@ -56,6 +57,7 @@ impl TokenType {
         match ident.to_lowercase().as_str() {
             "select" => TokenType::Keyword(Keyword::Select),
             "from" => TokenType::Keyword(Keyword::From),
+            "as" => TokenType::Keyword(Keyword::As),
             "where" => TokenType::Keyword(Keyword::Where),
             "and" => TokenType::Keyword(Keyword::And),
             "or" => TokenType::Keyword(Keyword::Or),
