@@ -48,14 +48,7 @@ impl Lexer {
         let literal = char::from(self.ch).to_string();
         let tok = match self.ch {
             0 => Token::new(TokenType::EOF, "".to_owned()),
-            b'=' => {
-                if self.peek_char() == b'=' {
-                    self.read_char();
-                    Token::new(TokenType::Eq, "==".to_owned())
-                } else {
-                    Token::new(TokenType::Assign, literal)
-                }
-            }
+            b'=' => Token::new(TokenType::Eq, "=".to_owned()),
             b'!' => {
                 if self.peek_char() == b'=' {
                     self.read_char();
@@ -145,7 +138,7 @@ mod tests {
     fn test_single_char_token() {
         let input = String::from("=-+(){},;*/<>!?");
         let tests = vec![
-            (TokenType::Assign, "="),
+            (TokenType::Eq, "="),
             (TokenType::Minus, "-"),
             (TokenType::Plus, "+"),
             (TokenType::LParen, "("),
@@ -170,9 +163,9 @@ mod tests {
 
     #[test]
     fn test_two_char_token() {
-        let input = String::from("==!=<=>=");
+        let input = String::from("=!=<=>=");
         let tests = vec![
-            (TokenType::Eq, "=="),
+            (TokenType::Eq, "="),
             (TokenType::NotEq, "!="),
             (TokenType::Lte, "<="),
             (TokenType::Gte, ">="),
@@ -188,8 +181,9 @@ mod tests {
 
     #[test]
     fn test_next_token() {
-        let input =
-            String::from("select distinct * from users where id = ? group by name limit 10;");
+        let input = String::from(
+            "select distinct * from users where id = ? and name = ? or age = 12 group by name limit 10;",
+        );
         let tests = vec![
             (TokenType::Keyword(Keyword::Select), "select"),
             (TokenType::Keyword(Keyword::Distinct), "distinct"),
@@ -198,8 +192,16 @@ mod tests {
             (TokenType::Ident, "users"),
             (TokenType::Keyword(Keyword::Where), "where"),
             (TokenType::Ident, "id"),
-            (TokenType::Assign, "="),
+            (TokenType::Eq, "="),
             (TokenType::Ident, "?"),
+            (TokenType::Keyword(Keyword::And), "and"),
+            (TokenType::Ident, "name"),
+            (TokenType::Eq, "="),
+            (TokenType::Ident, "?"),
+            (TokenType::Keyword(Keyword::Or), "or"),
+            (TokenType::Ident, "age"),
+            (TokenType::Eq, "="),
+            (TokenType::Int, "12"),
             (TokenType::Keyword(Keyword::Group), "group"),
             (TokenType::Keyword(Keyword::By), "by"),
             (TokenType::Ident, "name"),

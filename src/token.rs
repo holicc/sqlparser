@@ -39,8 +39,6 @@ pub enum TokenType {
     Gt,
     Eq,
     NotEq,
-    And,
-    Or,
     Lte,
     Gte,
 

@@ -46,12 +46,12 @@ impl Parser {
         let mut columns = Vec::new();
 
         loop {
-            let expr = self.parse_expression()?;
+            let expr = self.parse_expression(0)?;
             let alias = if self
                 .next_if_token(TokenType::Keyword(Keyword::As))
                 .is_some()
             {
-                Some(self.parse_expression()?.to_string())
+                Some(self.parse_expression(0)?.to_string())
             } else {
                 None
             };
@@ -72,16 +72,30 @@ impl Parser {
         }
 
         Ok(ast::From::Table {
-            name: self.parse_expression()?.to_string(),
+            name: self.parse_expression(0)?.to_string(),
             alias: None,
         })
     }
 
-    fn parse_expression(&mut self) -> Result<Expression> {
-        if let Some(prefix) = self.next_if_operator::<PrefixOperator>() {
-            return Ok(prefix.build(self.parse_expression()?));
+    fn parse_expression(&mut self, precedence: u8) -> Result<Expression> {
+        let mut lhs = if let Some(prefix) = self.next_if_operator::<PrefixOperator>() {
+            prefix.build(self.parse_expression(prefix.precedence())?)
+        } else {
+            self.parse_expression_atom()?
+        };
+
+        while let Some(infix) = self.next_if_operator::<InfixOperator>() {
+            if infix.precedence() < precedence {
+                break;
+            }
+            lhs = infix.build(lhs, self.parse_expression(infix.precedence())?);
+            println!("infix: {:?}", lhs);
         }
 
+        Ok(lhs)
+    }
+
+    fn parse_expression_atom(&mut self) -> Result<Expression> {
         match self.lexer.next().ok_or(Error::UnexpectedEOF)? {
             Token {
                 token_type: TokenType::Ident,
@@ -104,10 +118,7 @@ impl Parser {
     }
 
     fn next_if_operator<O: Operator>(&mut self) -> Option<O> {
-        self.lexer.peek().filter(|t| match t.token_type {
-            TokenType::Plus | TokenType::Minus | TokenType::Bang => true,
-            _ => false,
-        })?;
+        self.lexer.peek().and_then(|t| O::from(t))?;
         O::from(&self.lexer.next()?)
     }
 
@@ -119,6 +130,8 @@ impl Parser {
 
 trait Operator: Sized {
     fn from(token: &Token) -> Option<Self>;
+
+    fn precedence(&self) -> u8;
 }
 
 enum PrefixOperator {
@@ -136,6 +149,10 @@ impl Operator for PrefixOperator {
             _ => None,
         }
     }
+
+    fn precedence(&self) -> u8 {
+        9
+    }
 }
 
 impl PrefixOperator {
@@ -148,6 +165,7 @@ impl PrefixOperator {
     }
 }
 
+#[derive(Debug)]
 enum InfixOperator {
     Add,
     Sub,
@@ -163,9 +181,9 @@ enum InfixOperator {
     Or,
 }
 
-impl Operator for InfixOperator{
+impl Operator for InfixOperator {
     fn from(token: &Token) -> Option<Self> {
-        match token.token_type{
+        match token.token_type {
             TokenType::Plus => Some(InfixOperator::Add),
             TokenType::Minus => Some(InfixOperator::Sub),
             TokenType::Asterisk => Some(InfixOperator::Mul),
@@ -176,9 +194,63 @@ impl Operator for InfixOperator{
             TokenType::Lte => Some(InfixOperator::Lte),
             TokenType::Eq => Some(InfixOperator::Eq),
             TokenType::NotEq => Some(InfixOperator::NotEq),
-            TokenType::And => Some(InfixOperator::And),
-            TokenType::Or => Some(InfixOperator::Or),
+            TokenType::Keyword(Keyword::And) => Some(InfixOperator::And),
+            TokenType::Keyword(Keyword::Or) => Some(InfixOperator::Or),
             _ => None,
+        }
+    }
+
+    fn precedence(&self) -> u8 {
+        match self {
+            InfixOperator::Or => 1,
+            InfixOperator::And => 2,
+            InfixOperator::Eq | InfixOperator::NotEq => 3,
+            InfixOperator::Gt | InfixOperator::Gte | InfixOperator::Lt | InfixOperator::Lte => 4,
+            InfixOperator::Add | InfixOperator::Sub => 5,
+            InfixOperator::Mul | InfixOperator::Div => 6,
+        }
+    }
+}
+
+impl InfixOperator {
+    pub fn build(&self, lhr: Expression, rhs: Expression) -> Expression {
+        match self {
+            InfixOperator::Add => {
+                Expression::Operator(ast::Operator::Add(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Sub => {
+                Expression::Operator(ast::Operator::Sub(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Mul => {
+                Expression::Operator(ast::Operator::Mul(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Div => {
+                Expression::Operator(ast::Operator::Div(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Gt => {
+                Expression::Operator(ast::Operator::Gt(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Gte => {
+                Expression::Operator(ast::Operator::Gte(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Lt => {
+                Expression::Operator(ast::Operator::Lt(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Lte => {
+                Expression::Operator(ast::Operator::Lte(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Eq => {
+                Expression::Operator(ast::Operator::Eq(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::NotEq => {
+                Expression::Operator(ast::Operator::NotEq(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::And => {
+                Expression::Operator(ast::Operator::And(Box::new(lhr), Box::new(rhs)))
+            }
+            InfixOperator::Or => {
+                Expression::Operator(ast::Operator::Or(Box::new(lhr), Box::new(rhs)))
+            }
         }
     }
 }
@@ -341,6 +413,6 @@ mod tests {
 
     fn parse_expr(input: &str) -> Result<Expression> {
         let mut parser = Parser::new(input.to_owned());
-        parser.parse_expression()
+        parser.parse_expression(0)
     }
 }
