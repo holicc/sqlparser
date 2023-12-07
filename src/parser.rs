@@ -19,21 +19,23 @@ impl Parser {
 
     pub fn parse(&mut self) -> Result<Statement> {
         match self.lexer.next() {
-            Some(token) => match token.token_type {
-                TokenType::Keyword(Keyword::Select) => self.parse_select_statement(),
-                _ => Err(Error::UnexpectedToken(token)),
-            },
-            None => Err(Error::UnexpectedEOF),
+            Some(Token {
+                token_type: TokenType::Keyword(Keyword::Select),
+                ..
+            }) => self.parse_select_statement(),
+            _ => Err(Error::UnexpectedEOF),
         }
     }
 
     fn parse_select_statement(&mut self) -> Result<Statement> {
+        let distinct = self.parse_distinct()?;
+
         let columns = self.parse_columns()?;
 
         let from = self.parse_from_statment()?;
 
         Ok(Statement::Select {
-            distinct: None,
+            distinct,
             columns,
             from,
             // TODO
@@ -42,10 +44,41 @@ impl Parser {
         })
     }
 
+    fn parse_distinct(&mut self) -> Result<Option<ast::Distinct>> {
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::Distinct))
+            .is_some()
+        {
+            if self
+                .next_if_token(TokenType::Keyword(Keyword::On))
+                .is_some()
+            {
+                self.next_if_token(TokenType::LParen)
+                    .ok_or(Error::UnexpectedEOF)?;
+
+                let mut columns = Vec::new();
+                while self.next_if_token(TokenType::RParen).is_none() {
+                    columns.push(self.parse_expression(0)?);
+                    self.next_if_token(TokenType::Comma);
+                }
+
+                Ok(Some(ast::Distinct::DISTINCT(columns)))
+            } else {
+                Ok(Some(ast::Distinct::ALL))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_columns(&mut self) -> Result<Vec<(ast::Expression, Option<String>)>> {
         let mut columns = Vec::new();
 
         loop {
+            if self.next_if_token(TokenType::Comma).is_some() {
+                continue;
+            }
+
             let expr = self.parse_expression(0)?;
             let alias = if self
                 .next_if_token(TokenType::Keyword(Keyword::As))
@@ -78,18 +111,17 @@ impl Parser {
     }
 
     fn parse_expression(&mut self, precedence: u8) -> Result<Expression> {
-        let mut lhs = if let Some(prefix) = self.next_if_operator::<PrefixOperator>() {
+        let mut lhs = if let Some(prefix) = self.next_if_operator::<PrefixOperator>(precedence) {
             prefix.build(self.parse_expression(prefix.precedence())?)
         } else {
             self.parse_expression_atom()?
         };
 
-        while let Some(infix) = self.next_if_operator::<InfixOperator>() {
+        while let Some(infix) = self.next_if_operator::<InfixOperator>(precedence) {
             if infix.precedence() < precedence {
                 break;
             }
             lhs = infix.build(lhs, self.parse_expression(infix.precedence())?);
-            println!("infix: {:?}", lhs);
         }
 
         Ok(lhs)
@@ -113,12 +145,32 @@ impl Parser {
             } => Ok(ast::Expression::Literal(ast::Literal::Int(
                 literal.parse().map_err(|e| Error::ParseIntError(e))?,
             ))),
+            Token {
+                token_type: TokenType::Keyword(Keyword::True),
+                ..
+            } => Ok(ast::Expression::Literal(ast::Literal::Boolean(true))),
+            Token {
+                token_type: TokenType::Keyword(Keyword::False),
+                ..
+            } => Ok(ast::Expression::Literal(ast::Literal::Boolean(false))),
+            Token {
+                token_type: TokenType::LParen,
+                ..
+            } => {
+                let expr = self.parse_expression(0)?;
+                self.next_if_token(TokenType::RParen)
+                    .ok_or(Error::UnexpectedEOF)?;
+                Ok(expr)
+            }
             token => Err(Error::UnexpectedToken(token)),
         }
     }
 
-    fn next_if_operator<O: Operator>(&mut self) -> Option<O> {
-        self.lexer.peek().and_then(|t| O::from(t))?;
+    fn next_if_operator<O: Operator>(&mut self, precedence: u8) -> Option<O> {
+        self.lexer
+            .peek()
+            .and_then(|t| O::from(t))
+            .filter(|op| op.precedence() >= precedence)?;
         O::from(&self.lexer.next()?)
     }
 
@@ -257,6 +309,8 @@ impl InfixOperator {
 
 #[cfg(test)]
 mod tests {
+    use std::vec;
+
     use super::Parser;
     use crate::ast::{self, Expression, Statement};
     use crate::error::Result;
@@ -271,6 +325,50 @@ mod tests {
                 distinct: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_distinct_select_statement() {
+        let stmt = parse_stmt("SELECT DISTINCT * FROM users;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: Some(ast::Distinct::ALL),
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT DISTINCT ON(name,age),school FROM users;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: Some(ast::Distinct::DISTINCT(vec![
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("age".to_owned())),
+                ])),
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("school".to_owned())),
                     None,
                 )],
                 from: ast::From::Table {
@@ -398,6 +496,80 @@ mod tests {
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
+            ),
+            (
+                "-a * b",
+                Expression::Operator(ast::Operator::Mul(
+                    Box::new(Expression::Operator(ast::Operator::Neg(Box::new(
+                        Expression::Literal(ast::Literal::String("a".to_owned())),
+                    )))),
+                    Box::new(Expression::Literal(ast::Literal::String("b".to_owned()))),
+                )),
+            ),
+            (
+                "a + b * c",
+                Expression::Operator(ast::Operator::Add(
+                    Box::new(Expression::Literal(ast::Literal::String("a".to_owned()))),
+                    Box::new(Expression::Operator(ast::Operator::Mul(
+                        Box::new(Expression::Literal(ast::Literal::String("b".to_owned()))),
+                        Box::new(Expression::Literal(ast::Literal::String("c".to_owned()))),
+                    ))),
+                )),
+            ),
+            (
+                "5 > 1 AND 3 < 4",
+                Expression::Operator(ast::Operator::And(
+                    Box::new(Expression::Operator(ast::Operator::Gt(
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                        Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    ))),
+                    Box::new(Expression::Operator(ast::Operator::Lt(
+                        Box::new(Expression::Literal(ast::Literal::Int(3))),
+                        Box::new(Expression::Literal(ast::Literal::Int(4))),
+                    ))),
+                )),
+            ),
+            (
+                "1 + (2 + 3) + 4",
+                Expression::Operator(ast::Operator::Add(
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    Box::new(Expression::Operator(ast::Operator::Add(
+                        Box::new(Expression::Operator(ast::Operator::Add(
+                            Box::new(Expression::Literal(ast::Literal::Int(2))),
+                            Box::new(Expression::Literal(ast::Literal::Int(3))),
+                        ))),
+                        Box::new(Expression::Literal(ast::Literal::Int(4))),
+                    ))),
+                )),
+            ),
+            (
+                "(5 + 5) * 2",
+                Expression::Operator(ast::Operator::Mul(
+                    Box::new(Expression::Operator(ast::Operator::Add(
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                    ))),
+                    Box::new(Expression::Literal(ast::Literal::Int(2))),
+                )),
+            ),
+            (
+                "2 / (5 + 5)",
+                Expression::Operator(ast::Operator::Div(
+                    Box::new(Expression::Literal(ast::Literal::Int(2))),
+                    Box::new(Expression::Operator(ast::Operator::Add(
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                    ))),
+                )),
+            ),
+            (
+                "-(5 + 5)",
+                Expression::Operator(ast::Operator::Neg(Box::new(Expression::Operator(
+                    ast::Operator::Add(
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                        Box::new(Expression::Literal(ast::Literal::Int(5))),
+                    ),
+                )))),
             ),
         ];
 

@@ -14,7 +14,10 @@ pub enum Keyword {
     Offset,
     Group,
     Distinct,
+    On,
     As,
+    True,
+    False,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -67,7 +70,12 @@ impl TokenType {
             "limit" => TokenType::Keyword(Keyword::Limit),
             "offset" => TokenType::Keyword(Keyword::Offset),
             "group" => TokenType::Keyword(Keyword::Group),
+            "on" => TokenType::Keyword(Keyword::On),
             "distinct" => TokenType::Keyword(Keyword::Distinct),
+            "true" => TokenType::Keyword(Keyword::True),
+            "false" => TokenType::Keyword(Keyword::False),
+            "(" => TokenType::LParen,
+            ")" => TokenType::RParen,
             _ => TokenType::Ident,
         }
     }
