@@ -399,6 +399,51 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_boolean() {
+        let stmt = parse_expr("true").unwrap();
+
+        assert_eq!(stmt, Expression::Literal(ast::Literal::Boolean(true)));
+
+        let stmt = parse_expr("false").unwrap();
+
+        assert_eq!(stmt, Expression::Literal(ast::Literal::Boolean(false)));
+    }
+
+    #[test]
+    fn test_parse_function() {
+        let stmt = parse_expr("foo(1, 2, 3)").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Function(
+                "foo".to_owned(),
+                vec![
+                    Expression::Literal(ast::Literal::Int(1)),
+                    Expression::Literal(ast::Literal::Int(2)),
+                    Expression::Literal(ast::Literal::Int(3)),
+                ]
+            )
+        );
+
+        let stmt = parse_expr("foo(bar(1, 2, 3))").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Function(
+                "foo".to_owned(),
+                vec![Expression::Function(
+                    "bar".to_owned(),
+                    vec![
+                        Expression::Literal(ast::Literal::Int(1)),
+                        Expression::Literal(ast::Literal::Int(2)),
+                        Expression::Literal(ast::Literal::Int(3)),
+                    ]
+                ),]
+            )
+        );
+    }
+
+    #[test]
     fn test_parse_prefix_expression() {
         let stmt = parse_expr("-123").unwrap();
 

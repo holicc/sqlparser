@@ -28,6 +28,7 @@ pub enum From {
 pub enum Expression {
     Literal(Literal),
     Operator(Operator),
+    Function(String, Vec<Expression>),
 }
 
 impl Display for Expression {
@@ -35,6 +36,17 @@ impl Display for Expression {
         match self {
             Expression::Literal(l) => write!(f, "{}", l),
             Expression::Operator(o) => write!(f, "{}", o),
+            Expression::Function(n, args) => {
+                write!(
+                    f,
+                    "{}({})",
+                    n,
+                    args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
         }
     }
 }
