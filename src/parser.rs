@@ -132,7 +132,20 @@ impl Parser {
             Token {
                 token_type: TokenType::Ident,
                 literal,
-            } => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
+            } => {
+                
+                // parse function
+                if self.next_if_token(TokenType::LParen).is_some() {
+                    let mut args = Vec::new();
+                    while self.next_if_token(TokenType::RParen).is_none() {
+                        args.push(self.parse_expression(0)?);
+                        self.next_if_token(TokenType::Comma);
+                    }
+                    return Ok(ast::Expression::Function(literal, args));
+                }
+
+                Ok(ast::Expression::Literal(ast::Literal::String(literal)))
+            },
             Token {
                 token_type: TokenType::Asterisk,
                 ..
