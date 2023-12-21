@@ -99,14 +99,49 @@ impl Parser {
     }
 
     fn parse_from_statment(&mut self) -> Result<ast::From> {
-        let token = self.lexer.next().ok_or(Error::UnexpectedEOF)?;
-        if token.token_type != TokenType::Keyword(Keyword::From) {
-            return Err(Error::UnexpectedToken(token));
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::From))
+            .is_none()
+        {
+            return Err(Error::UnexpectedEOF);
+        }
+        // parse table refereneces
+        let table_ref = self.parse_table_reference()?;
+
+        // parse table function
+        if let Some(_) = self.next_if_token(TokenType::LParen){
+
         }
 
+        // TODO parse subquery
+
+        // TODO parse join cause
+
+        Ok(table_ref)
+    }
+
+    fn parse_table_reference(&mut self) -> Result<ast::From> {
+        let mut table_name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+        while let Some(preiod) = self.next_if_token(TokenType::Period) {
+            table_name.push_str(&preiod.literal);
+            table_name.push_str(&self.next_ident().ok_or(Error::UnexpectedEOF)?);
+        }
+
+        let alias = if self
+            .next_if_token(TokenType::Keyword(Keyword::As))
+            .is_some()
+        {
+            Some(self.next_ident().ok_or(Error::UnexpectedEOF)?)
+        } else if let Some(ident) = self.next_ident() {
+            Some(ident)
+        } else {
+            None
+        };
+
         Ok(ast::From::Table {
-            name: self.parse_expression(0)?.to_string(),
-            alias: None,
+            name: table_name,
+            alias,
         })
     }
 
@@ -133,7 +168,6 @@ impl Parser {
                 token_type: TokenType::Ident,
                 literal,
             } => {
-                
                 // parse function
                 if self.next_if_token(TokenType::LParen).is_some() {
                     let mut args = Vec::new();
@@ -145,7 +179,7 @@ impl Parser {
                 }
 
                 Ok(ast::Expression::Literal(ast::Literal::String(literal)))
-            },
+            }
             Token {
                 token_type: TokenType::Asterisk,
                 ..
@@ -177,6 +211,13 @@ impl Parser {
             }
             token => Err(Error::UnexpectedToken(token)),
         }
+    }
+
+    fn next_ident(&mut self) -> Option<String> {
+        self.lexer
+            .peek()
+            .filter(|t| t.token_type == TokenType::Ident)?;
+        self.lexer.next().map(|t| t.literal)
     }
 
     fn next_if_operator<O: Operator>(&mut self, precedence: u8) -> Option<O> {
@@ -343,6 +384,28 @@ mod tests {
                 from: ast::From::Table {
                     name: String::from("users"),
                     alias: None,
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_table_reference() {
+        let stmt = parse_stmt("select * from public.users as u;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Table {
+                    name: String::from("public.users"),
+                    alias: Some(String::from("u")),
                 },
                 r#where: None,
                 group_by: None,

@@ -49,6 +49,7 @@ pub enum TokenType {
     Comma,
     Semicolon,
     Bang,
+    Period,
 
     Keyword(Keyword),
 }
@@ -76,6 +77,22 @@ impl TokenType {
             "false" => TokenType::Keyword(Keyword::False),
             "(" => TokenType::LParen,
             ")" => TokenType::RParen,
+            "{" => TokenType::LBrace,
+            "}" => TokenType::RBrace,
+            "," => TokenType::Comma,
+            ";" => TokenType::Semicolon,
+            "+" => TokenType::Plus,
+            "-" => TokenType::Minus,
+            "*" => TokenType::Asterisk,
+            "/" => TokenType::Slash,
+            "<" => TokenType::Lt,
+            ">" => TokenType::Gt,
+            "=" => TokenType::Eq,
+            "!" => TokenType::Bang,
+            "." => TokenType::Period,
+            "<=" => TokenType::Lte,
+            ">=" => TokenType::Gte,
+            "!=" => TokenType::NotEq,
             _ => TokenType::Ident,
         }
     }

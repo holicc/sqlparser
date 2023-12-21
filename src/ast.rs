@@ -18,10 +18,22 @@ pub enum Distinct {
     DISTINCT(Vec<Expression>),
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Debug)]
 
 pub enum From {
-    Table { name: String, alias: Option<String> },
+    Table {
+        name: String,
+        alias: Option<String>,
+    },
+    TableFunction {
+        name: String,
+        args: Vec<Expression>,
+        alias: Option<String>,
+    },
+    SubQuery {
+        query: Box<Statement>,
+        alias: Option<String>,
+    },
 }
 
 #[derive(PartialEq, Debug)]

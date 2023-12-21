@@ -74,6 +74,7 @@ impl Lexer {
                 }
             }
             b';' => Token::new(TokenType::Semicolon, literal),
+            b'.' => Token::new(TokenType::Period, literal),
             b'(' => Token::new(TokenType::LParen, literal),
             b')' => Token::new(TokenType::RParen, literal),
             b',' => Token::new(TokenType::Comma, literal),
