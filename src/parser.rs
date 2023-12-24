@@ -32,6 +32,12 @@ impl Parser {
 
         let columns = self.parse_columns()?;
 
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::From))
+            .is_none()
+        {
+            return Err(Error::UnexpectedEOF);
+        }
         let from = self.parse_from_statment()?;
 
         Ok(Statement::Select {
@@ -99,50 +105,136 @@ impl Parser {
     }
 
     fn parse_from_statment(&mut self) -> Result<ast::From> {
-        if self
-            .next_if_token(TokenType::Keyword(Keyword::From))
-            .is_none()
-        {
-            return Err(Error::UnexpectedEOF);
+        // parse subquery
+        if self.next_if_token(TokenType::LParen).is_some() {
+            if self
+                .next_if_token(TokenType::Keyword(Keyword::Select))
+                .is_none()
+            {
+                return Err(Error::UnexpectedEOF);
+            }
+
+            let subquery = self.parse_select_statement()?;
+
+            self.next_if_token(TokenType::RParen)
+                .ok_or(Error::UnexpectedEOF)?;
+
+            return Ok(ast::From::SubQuery {
+                query: Box::new(subquery),
+                alias: self.parse_alias(),
+            });
         }
+
         // parse table refereneces
         let table_ref = self.parse_table_reference()?;
 
-        // parse table function
-        if let Some(_) = self.next_if_token(TokenType::LParen){
+        // parse join cause
+        if let Some(join_type) = self.parse_join_type()? {
+            let right = self.parse_from_statment()?;
+            let on = if join_type == ast::JoinType::Cross {
+                None
+            } else {
+                if self
+                    .next_if_token(TokenType::Keyword(Keyword::On))
+                    .is_none()
+                {
+                    return Err(Error::UnexpectedEOF);
+                }
+                Some(self.parse_expression(0)?)
+            };
 
+            return Ok(ast::From::Join {
+                join_type,
+                left: Box::new(table_ref),
+                right: Box::new(right),
+                on,
+            });
         }
-
-        // TODO parse subquery
-
-        // TODO parse join cause
 
         Ok(table_ref)
     }
 
+    fn parse_join_type(&mut self) -> Result<Option<ast::JoinType>> {
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::Join))
+            .is_some()
+        {
+            Ok(Some(ast::JoinType::Inner))
+        } else if self
+            .next_if_token(TokenType::Keyword(Keyword::Left))
+            .is_some()
+        {
+            self.next_if_token(TokenType::Keyword(Keyword::Join));
+            Ok(Some(ast::JoinType::Left))
+        } else if self
+            .next_if_token(TokenType::Keyword(Keyword::Right))
+            .is_some()
+        {
+            self.next_if_token(TokenType::Keyword(Keyword::Join));
+            Ok(Some(ast::JoinType::Right))
+        } else if self
+            .next_if_token(TokenType::Keyword(Keyword::Full))
+            .is_some()
+        {
+            self.next_if_token(TokenType::Keyword(Keyword::Join));
+            Ok(Some(ast::JoinType::Full))
+        } else if self
+            .next_if_token(TokenType::Keyword(Keyword::Cross))
+            .is_some()
+        {
+            self.next_if_token(TokenType::Keyword(Keyword::Join));
+            Ok(Some(ast::JoinType::Cross))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn parse_table_reference(&mut self) -> Result<ast::From> {
         let mut table_name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let mut is_table_function = false;
+        let mut args = Vec::new();
 
         while let Some(preiod) = self.next_if_token(TokenType::Period) {
             table_name.push_str(&preiod.literal);
             table_name.push_str(&self.next_ident().ok_or(Error::UnexpectedEOF)?);
         }
 
-        let alias = if self
-            .next_if_token(TokenType::Keyword(Keyword::As))
-            .is_some()
-        {
-            Some(self.next_ident().ok_or(Error::UnexpectedEOF)?)
-        } else if let Some(ident) = self.next_ident() {
-            Some(ident)
-        } else {
-            None
-        };
+        // parse table function
+        if self.next_if_token(TokenType::LParen).is_some() {
+            is_table_function = true;
+            while self.next_if_token(TokenType::RParen).is_none() {
+                args.push(self.parse_expression(0)?);
+                self.next_if_token(TokenType::Comma);
+            }
+        }
+
+        let alias = self.parse_alias();
+
+        if is_table_function {
+            return Ok(ast::From::TableFunction {
+                name: table_name,
+                args,
+                alias,
+            });
+        }
 
         Ok(ast::From::Table {
             name: table_name,
             alias,
         })
+    }
+
+    fn parse_alias(&mut self) -> Option<String> {
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::As))
+            .is_some()
+        {
+            self.next_ident()
+        } else if let Some(ident) = self.next_ident() {
+            Some(ident)
+        } else {
+            None
+        }
     }
 
     fn parse_expression(&mut self, precedence: u8) -> Result<Expression> {
@@ -166,7 +258,7 @@ impl Parser {
         match self.lexer.next().ok_or(Error::UnexpectedEOF)? {
             Token {
                 token_type: TokenType::Ident,
-                literal,
+                mut literal,
             } => {
                 // parse function
                 if self.next_if_token(TokenType::LParen).is_some() {
@@ -175,10 +267,14 @@ impl Parser {
                         args.push(self.parse_expression(0)?);
                         self.next_if_token(TokenType::Comma);
                     }
-                    return Ok(ast::Expression::Function(literal, args));
+                    Ok(ast::Expression::Function(literal, args))
+                } else {
+                    while let Some(p) = self.next_if_token(TokenType::Period) {
+                        literal.push_str(&p.literal);
+                        literal.push_str(&self.next_ident().ok_or(Error::UnexpectedEOF)?);
+                    }
+                    Ok(ast::Expression::Literal(ast::Literal::String(literal)))
                 }
-
-                Ok(ast::Expression::Literal(ast::Literal::String(literal)))
             }
             Token {
                 token_type: TokenType::Asterisk,
@@ -192,6 +288,10 @@ impl Parser {
             } => Ok(ast::Expression::Literal(ast::Literal::Int(
                 literal.parse().map_err(|e| Error::ParseIntError(e))?,
             ))),
+            Token {
+                token_type: TokenType::String,
+                literal,
+            } => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
             Token {
                 token_type: TokenType::Keyword(Keyword::True),
                 ..
@@ -392,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_table_reference() {
+    fn test_parse_from_item() {
         let stmt = parse_stmt("select * from public.users as u;").unwrap();
 
         assert_eq!(
@@ -406,6 +506,247 @@ mod tests {
                 from: ast::From::Table {
                     name: String::from("public.users"),
                     alias: Some(String::from("u")),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from catalog.public.users u;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Table {
+                    name: String::from("catalog.public.users"),
+                    alias: Some(String::from("u")),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from catalog.public.users(1,'2',box(1));").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::TableFunction {
+                    name: String::from("catalog.public.users"),
+                    args: vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("2".to_owned())),
+                        ast::Expression::Function(
+                            String::from("box"),
+                            vec![ast::Expression::Literal(ast::Literal::Int(1))]
+                        ),
+                    ],
+                    alias: None,
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from (select * from users) as u;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::SubQuery {
+                    query: Box::new(ast::Statement::Select {
+                        distinct: None,
+                        columns: vec![(
+                            ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                            None,
+                        )],
+                        from: ast::From::Table {
+                            name: String::from("users"),
+                            alias: None,
+                        },
+                        r#where: None,
+                        group_by: None,
+                    }),
+                    alias: Some(String::from("u")),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from users u join users u2 on u.id = u2.id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Join {
+                    join_type: ast::JoinType::Inner,
+                    left: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    }),
+                    right: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u2")),
+                    }),
+                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u.id".to_owned()
+                        ))),
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u2.id".to_owned()
+                        ))),
+                    ))),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from users u left join users u2 on u.id = u2.id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Join {
+                    join_type: ast::JoinType::Left,
+                    left: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    }),
+                    right: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u2")),
+                    }),
+                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u.id".to_owned()
+                        ))),
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u2.id".to_owned()
+                        ))),
+                    ))),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt =
+            parse_stmt("select * from users u right join users u2 on u.id = u2.id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Join {
+                    join_type: ast::JoinType::Right,
+                    left: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    }),
+                    right: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u2")),
+                    }),
+                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u.id".to_owned()
+                        ))),
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u2.id".to_owned()
+                        ))),
+                    ))),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from users u full join users u2 on u.id = u2.id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Join {
+                    join_type: ast::JoinType::Full,
+                    left: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    }),
+                    right: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u2")),
+                    }),
+                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u.id".to_owned()
+                        ))),
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "u2.id".to_owned()
+                        ))),
+                    ))),
+                },
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from users u cross join users u2;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: ast::From::Join {
+                    join_type: ast::JoinType::Cross,
+                    left: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    }),
+                    right: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u2")),
+                    }),
+                    on: None,
                 },
                 r#where: None,
                 group_by: None,

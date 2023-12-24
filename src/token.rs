@@ -18,6 +18,12 @@ pub enum Keyword {
     As,
     True,
     False,
+    Join,
+    Inner,
+    Left,
+    Right,
+    Full,
+    Cross,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -26,6 +32,7 @@ pub enum TokenType {
     EOF,
     // Identifiers + literals
     Ident,
+    String,
     Int,
 
     // Operators
@@ -75,6 +82,12 @@ impl TokenType {
             "distinct" => TokenType::Keyword(Keyword::Distinct),
             "true" => TokenType::Keyword(Keyword::True),
             "false" => TokenType::Keyword(Keyword::False),
+            "join" => TokenType::Keyword(Keyword::Join),
+            "inner" => TokenType::Keyword(Keyword::Inner),
+            "left" => TokenType::Keyword(Keyword::Left),
+            "right" => TokenType::Keyword(Keyword::Right),
+            "full" => TokenType::Keyword(Keyword::Full),
+            "cross" => TokenType::Keyword(Keyword::Cross),
             "(" => TokenType::LParen,
             ")" => TokenType::RParen,
             "{" => TokenType::LBrace,

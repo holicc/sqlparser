@@ -85,6 +85,23 @@ impl Lexer {
             b'*' => Token::new(TokenType::Asterisk, literal),
             b'/' => Token::new(TokenType::Slash, literal),
             b'?' => Token::new(TokenType::Ident, literal),
+            b'\'' => {
+                let mut s = String::new();
+                loop {
+                    self.read_char();
+                    match self.ch {
+                        b'\'' => {
+                            self.read_char();
+                            break;
+                        }
+                        0 => return Token::new(TokenType::ILLIGAL, literal),
+                        _ => {
+                            s.push(char::from(self.ch));
+                        }
+                    }
+                }
+                Token::new(TokenType::String, s)
+            }
             b if b.is_ascii_alphabetic() => {
                 let literal = self.read_literal();
                 let token_type = TokenType::lookup_ident(&literal);
@@ -101,9 +118,10 @@ impl Lexer {
 
     fn read_literal(&mut self) -> String {
         let position = self.position;
-        while self.ch.is_ascii_alphabetic() {
+        while self.ch.is_ascii_alphabetic() || self.ch.is_ascii_alphanumeric() {
             self.read_char();
         }
+
         self.input[position..self.position].to_owned()
     }
 
@@ -183,7 +201,7 @@ mod tests {
     #[test]
     fn test_next_token() {
         let input = String::from(
-            "select distinct * from users where id = ? and name = ? or age = 12 group by name limit 10;",
+            "select distinct * from users as u2 where id = ? and name = ? or age = 12 group by name limit 10;",
         );
         let tests = vec![
             (TokenType::Keyword(Keyword::Select), "select"),
@@ -191,6 +209,8 @@ mod tests {
             (TokenType::Asterisk, "*"),
             (TokenType::Keyword(Keyword::From), "from"),
             (TokenType::Ident, "users"),
+            (TokenType::Keyword(Keyword::As), "as"),
+            (TokenType::Ident, "u2"),
             (TokenType::Keyword(Keyword::Where), "where"),
             (TokenType::Ident, "id"),
             (TokenType::Eq, "="),

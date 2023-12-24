@@ -34,6 +34,21 @@ pub enum From {
         query: Box<Statement>,
         alias: Option<String>,
     },
+    Join {
+        left: Box<From>,
+        right: Box<From>,
+        on: Option<Expression>,
+        join_type: JoinType,
+    },
+}
+
+#[derive(PartialEq, Debug)]
+pub enum JoinType {
+    Cross,
+    Inner,
+    Left,
+    Full,
+    Right,
 }
 
 #[derive(PartialEq, Debug)]
