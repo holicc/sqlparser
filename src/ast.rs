@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 
 #[derive(PartialEq, Debug)]
 pub enum Statement {
@@ -9,6 +9,68 @@ pub enum Statement {
         r#where: Option<Expression>,
         group_by: Option<Vec<Expression>>,
     },
+}
+
+impl Display for Statement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Statement::Select {
+                distinct,
+                columns,
+                from,
+                r#where,
+                group_by,
+            } => {
+                write!(f, "SELECT ")?;
+                if let Some(d) = distinct {
+                    match d {
+                        Distinct::ALL => write!(f, "ALL ")?,
+                        Distinct::DISTINCT(e) => {
+                            write!(f, "DISTINCT ")?;
+                            write!(
+                                f,
+                                "{}",
+                                e.iter()
+                                    .map(|e| e.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(", ")
+                            )?;
+                        }
+                    }
+                }
+                write!(
+                    f,
+                    "{}",
+                    columns
+                        .iter()
+                        .map(|(e, a)| match a {
+                            Some(a) => format!("{} AS {}", e, a),
+                            None => e.to_string(),
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?;
+                if let Some(from) = from {
+                    write!(f, " FROM {}", from)?;
+                }
+                if let Some(where_) = r#where {
+                    write!(f, " WHERE {}", where_)?;
+                }
+                if let Some(group_by) = group_by {
+                    write!(
+                        f,
+                        " GROUP BY {}",
+                        group_by
+                            .iter()
+                            .map(|e| e.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -42,6 +104,62 @@ pub enum From {
     },
 }
 
+impl Display for From {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            From::Table { name, alias } => match alias {
+                Some(a) => write!(f, "{} AS {}", name, a),
+                None => write!(f, "{}", name),
+            },
+            From::TableFunction { name, args, alias } => match alias {
+                Some(a) => write!(
+                    f,
+                    "{}({}) AS {}",
+                    name,
+                    args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    a
+                ),
+                None => write!(
+                    f,
+                    "{}({})",
+                    name,
+                    args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ),
+            },
+            From::SubQuery { query, alias } => match alias {
+                Some(a) => write!(f, "({}) AS {}", query, a),
+                None => write!(f, "({})", query),
+            },
+            From::Join {
+                left,
+                right,
+                on,
+                join_type,
+            } => {
+                write!(f, "{}", left)?;
+                match join_type {
+                    JoinType::Cross => write!(f, " CROSS JOIN ")?,
+                    JoinType::Inner => write!(f, " INNER JOIN ")?,
+                    JoinType::Left => write!(f, " LEFT JOIN ")?,
+                    JoinType::Full => write!(f, " FULL JOIN ")?,
+                    JoinType::Right => write!(f, " RIGHT JOIN ")?,
+                }
+                write!(f, "{}", right)?;
+                if let Some(on) = on {
+                    write!(f, " ON {}", on)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub enum JoinType {
     Cross,
@@ -56,9 +174,16 @@ pub enum Expression {
     Literal(Literal),
     Operator(Operator),
     Function(String, Vec<Expression>),
+    /// `[ NOT ] IN (val1, val2, ...)`
     InList {
         field: Box<Expression>,
         list: Vec<Expression>,
+        negated: bool,
+    },
+    /// `[ NOT ] IN (SELECT ...)`
+    InSubQuery {
+        field: Box<Expression>,
+        query: Box<Statement>,
         negated: bool,
     },
 }
@@ -93,6 +218,19 @@ impl Display for Expression {
                         .map(|arg| arg.to_string())
                         .collect::<Vec<String>>()
                         .join(", ")
+                )
+            }
+            Expression::InSubQuery {
+                field,
+                query,
+                negated,
+            } => {
+                write!(
+                    f,
+                    "{} {} IN ({})",
+                    field,
+                    if *negated { "NOT" } else { "" },
+                    query
                 )
             }
         }

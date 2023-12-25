@@ -257,17 +257,27 @@ impl Parser {
         self.next_if_token(TokenType::LParen)
             .ok_or(Error::UnexpectedEOF)?;
 
-        let mut list = Vec::new();
-        while self.next_if_token(TokenType::RParen).is_none() {
-            list.push(self.parse_expression(0)?);
-            self.next_if_token(TokenType::Comma);
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::Select))
+            .is_some()
+        {
+            Ok(Expression::InSubQuery {
+                field: Box::new(lhs),
+                query: Box::new(self.parse_select_statement()?),
+                negated,
+            })
+        } else {
+            let mut list = Vec::new();
+            while self.next_if_token(TokenType::RParen).is_none() {
+                list.push(self.parse_expression(0)?);
+                self.next_if_token(TokenType::Comma);
+            }
+            Ok(Expression::InList {
+                field: Box::new(lhs),
+                list,
+                negated,
+            })
         }
-
-        Ok(Expression::InList {
-            field: Box::new(lhs),
-            list,
-            negated,
-        })
     }
 
     fn parse_expression(&mut self, precedence: u8) -> Result<Expression> {
@@ -1020,6 +1030,67 @@ mod tests {
                         Expression::Literal(ast::Literal::String("1".to_owned())),
                         Expression::Literal(ast::Literal::String("2".to_owned())),
                     ],
+                    negated: false,
+                }),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id not in ('1','2')").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::InList {
+                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    list: vec![
+                        Expression::Literal(ast::Literal::String("1".to_owned())),
+                        Expression::Literal(ast::Literal::String("2".to_owned())),
+                    ],
+                    negated: true,
+                }),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id in (select id from users)").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::InSubQuery {
+                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    query: Box::new(ast::Statement::Select {
+                        distinct: None,
+                        columns: vec![(
+                            Expression::Literal(ast::Literal::String("id".to_owned())),
+                            None,
+                        )],
+                        from: Some(ast::From::Table {
+                            name: String::from("users"),
+                            alias: None,
+                        }),
+                        r#where: None,
+                        group_by: None,
+                    }),
                     negated: false,
                 }),
                 group_by: None,
