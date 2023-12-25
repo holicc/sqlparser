@@ -41,8 +41,8 @@ impl Parser {
                 columns,
                 from: None,
                 r#where: None,
-                // TODO
                 group_by: None,
+                having: None,
             });
         }
         let from = self.parse_from_statment()?;
@@ -56,14 +56,47 @@ impl Parser {
             None
         };
 
+        let group_by = if self
+            .next_if_token(TokenType::Keyword(Keyword::Group))
+            .is_some()
+        {
+            Some(self.parse_group_by()?)
+        } else {
+            None
+        };
+
+        let having = if self
+            .next_if_token(TokenType::Keyword(Keyword::Having))
+            .is_some()
+        {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+
         Ok(Statement::Select {
             distinct,
             columns,
             from: Some(from),
             r#where,
-            // TODO
-            group_by: None,
+            group_by,
+            having,
         })
+    }
+
+    fn parse_group_by(&mut self) -> Result<Vec<Expression>> {
+        self.next_if_token(TokenType::Keyword(Keyword::By))
+            .ok_or(Error::UnexpectedEOF)?;
+
+        let mut group_by = Vec::new();
+        while self.next_if_token(TokenType::Semicolon).is_none() {
+            group_by.push(self.parse_expression(0)?);
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
+
+        Ok(group_by)
     }
 
     fn parse_distinct(&mut self) -> Result<Option<ast::Distinct>> {
@@ -553,6 +586,7 @@ mod tests {
                 }),
                 r#where: None,
                 group_by: None,
+                having: None,
             }
         );
 
@@ -566,6 +600,7 @@ mod tests {
                 from: None,
                 r#where: None,
                 group_by: None,
+                having: None,
             }
         );
     }
@@ -578,6 +613,7 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
@@ -597,6 +633,7 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
@@ -616,6 +653,7 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
@@ -643,12 +681,14 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
                 from: Some(ast::From::SubQuery {
                     query: Box::new(ast::Statement::Select {
+                        having: None,
                         distinct: None,
                         columns: vec![(
                             ast::Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -674,6 +714,7 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
@@ -708,6 +749,7 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
@@ -743,6 +785,7 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 distinct: None,
+                having: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
@@ -776,6 +819,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -810,6 +854,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -840,6 +885,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: Some(ast::Distinct::ALL),
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -859,6 +905,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: Some(ast::Distinct::DISTINCT(vec![
                     ast::Expression::Literal(ast::Literal::String("name".to_owned())),
                     ast::Expression::Literal(ast::Literal::String("age".to_owned())),
@@ -883,6 +930,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -905,6 +953,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -933,6 +982,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -961,6 +1011,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -988,6 +1039,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -1015,6 +1067,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -1041,6 +1094,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -1067,6 +1121,7 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                having: None,
                 distinct: None,
                 columns: vec![(
                     Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -1079,6 +1134,7 @@ mod tests {
                 r#where: Some(Expression::InSubQuery {
                     field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
                     query: Box::new(ast::Statement::Select {
+                        having: None,
                         distinct: None,
                         columns: vec![(
                             Expression::Literal(ast::Literal::String("id".to_owned())),
@@ -1094,6 +1150,80 @@ mod tests {
                     negated: false,
                 }),
                 group_by: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_group_by() {
+        let stmt = parse_stmt("SELECT * FROM users GROUP BY id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: "users".to_owned(),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: Some(vec![Expression::Literal(ast::Literal::String(
+                    "id".to_owned()
+                ))]),
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users GROUP BY id, name;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: "users".to_owned(),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: Some(vec![
+                    Expression::Literal(ast::Literal::String("id".to_owned())),
+                    Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users GROUP BY id, name HAVING id = 1;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                having: Some(Expression::Operator(ast::Operator::Eq(
+                    Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                ))),
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: "users".to_owned(),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: Some(vec![
+                    Expression::Literal(ast::Literal::String("id".to_owned())),
+                    Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
             }
         );
     }

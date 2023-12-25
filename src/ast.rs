@@ -8,6 +8,7 @@ pub enum Statement {
         from: Option<From>,
         r#where: Option<Expression>,
         group_by: Option<Vec<Expression>>,
+        having: Option<Expression>,
     },
 }
 
@@ -20,6 +21,7 @@ impl Display for Statement {
                 from,
                 r#where,
                 group_by,
+                having,
             } => {
                 write!(f, "SELECT ")?;
                 if let Some(d) = distinct {
@@ -66,6 +68,10 @@ impl Display for Statement {
                             .collect::<Vec<String>>()
                             .join(", ")
                     )?;
+                }
+
+                if let Some(having) = having {
+                    write!(f, " HAVING {}", having)?;
                 }
                 Ok(())
             }
