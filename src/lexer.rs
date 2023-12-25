@@ -91,7 +91,6 @@ impl Lexer {
                     self.read_char();
                     match self.ch {
                         b'\'' => {
-                            self.read_char();
                             break;
                         }
                         0 => return Token::new(TokenType::ILLIGAL, literal),

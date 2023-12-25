@@ -5,7 +5,7 @@ pub enum Statement {
     Select {
         distinct: Option<Distinct>,
         columns: Vec<(Expression, Option<String>)>,
-        from: From,
+        from: Option<From>,
         r#where: Option<Expression>,
         group_by: Option<Vec<Expression>>,
     },
@@ -56,6 +56,11 @@ pub enum Expression {
     Literal(Literal),
     Operator(Operator),
     Function(String, Vec<Expression>),
+    InList {
+        field: Box<Expression>,
+        list: Vec<Expression>,
+        negated: bool,
+    },
 }
 
 impl Display for Expression {
@@ -69,6 +74,22 @@ impl Display for Expression {
                     "{}({})",
                     n,
                     args.iter()
+                        .map(|arg| arg.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+            Expression::InList {
+                field,
+                list,
+                negated,
+            } => {
+                write!(
+                    f,
+                    "{} {} IN ({})",
+                    field,
+                    if *negated { "NOT" } else { "" },
+                    list.iter()
                         .map(|arg| arg.to_string())
                         .collect::<Vec<String>>()
                         .join(", ")

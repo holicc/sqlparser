@@ -36,16 +36,32 @@ impl Parser {
             .next_if_token(TokenType::Keyword(Keyword::From))
             .is_none()
         {
-            return Err(Error::UnexpectedEOF);
+            return Ok(Statement::Select {
+                distinct,
+                columns,
+                from: None,
+                r#where: None,
+                // TODO
+                group_by: None,
+            });
         }
         let from = self.parse_from_statment()?;
+
+        let r#where = if self
+            .next_if_token(TokenType::Keyword(Keyword::Where))
+            .is_some()
+        {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
 
         Ok(Statement::Select {
             distinct,
             columns,
-            from,
+            from: Some(from),
+            r#where,
             // TODO
-            r#where: None,
             group_by: None,
         })
     }
@@ -237,6 +253,23 @@ impl Parser {
         }
     }
 
+    fn parse_in_expr(&mut self, lhs: Expression, negated: bool) -> Result<Expression> {
+        self.next_if_token(TokenType::LParen)
+            .ok_or(Error::UnexpectedEOF)?;
+
+        let mut list = Vec::new();
+        while self.next_if_token(TokenType::RParen).is_none() {
+            list.push(self.parse_expression(0)?);
+            self.next_if_token(TokenType::Comma);
+        }
+
+        Ok(Expression::InList {
+            field: Box::new(lhs),
+            list,
+            negated,
+        })
+    }
+
     fn parse_expression(&mut self, precedence: u8) -> Result<Expression> {
         let mut lhs = if let Some(prefix) = self.next_if_operator::<PrefixOperator>(precedence) {
             prefix.build(self.parse_expression(prefix.precedence())?)
@@ -244,11 +277,18 @@ impl Parser {
             self.parse_expression_atom()?
         };
 
+        let negated = self
+            .next_if_token(TokenType::Keyword(Keyword::Not))
+            .is_some();
+
         while let Some(infix) = self.next_if_operator::<InfixOperator>(precedence) {
             if infix.precedence() < precedence {
                 break;
             }
-            lhs = infix.build(lhs, self.parse_expression(infix.precedence())?);
+            lhs = match infix {
+                InfixOperator::In => self.parse_in_expr(lhs, negated)?,
+                _ => infix.build(lhs, self.parse_expression(infix.precedence())?)?,
+            }
         }
 
         Ok(lhs)
@@ -385,6 +425,7 @@ enum InfixOperator {
     NotEq,
     And,
     Or,
+    In,
 }
 
 impl Operator for InfixOperator {
@@ -402,6 +443,7 @@ impl Operator for InfixOperator {
             TokenType::NotEq => Some(InfixOperator::NotEq),
             TokenType::Keyword(Keyword::And) => Some(InfixOperator::And),
             TokenType::Keyword(Keyword::Or) => Some(InfixOperator::Or),
+            TokenType::Keyword(Keyword::In) => Some(InfixOperator::In),
             _ => None,
         }
     }
@@ -414,49 +456,63 @@ impl Operator for InfixOperator {
             InfixOperator::Gt | InfixOperator::Gte | InfixOperator::Lt | InfixOperator::Lte => 4,
             InfixOperator::Add | InfixOperator::Sub => 5,
             InfixOperator::Mul | InfixOperator::Div => 6,
+            InfixOperator::In => 7,
         }
     }
 }
 
 impl InfixOperator {
-    pub fn build(&self, lhr: Expression, rhs: Expression) -> Expression {
+    pub fn build(&self, lhr: Expression, rhs: Expression) -> Result<Expression> {
         match self {
-            InfixOperator::Add => {
-                Expression::Operator(ast::Operator::Add(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Sub => {
-                Expression::Operator(ast::Operator::Sub(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Mul => {
-                Expression::Operator(ast::Operator::Mul(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Div => {
-                Expression::Operator(ast::Operator::Div(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Gt => {
-                Expression::Operator(ast::Operator::Gt(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Gte => {
-                Expression::Operator(ast::Operator::Gte(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Lt => {
-                Expression::Operator(ast::Operator::Lt(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Lte => {
-                Expression::Operator(ast::Operator::Lte(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Eq => {
-                Expression::Operator(ast::Operator::Eq(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::NotEq => {
-                Expression::Operator(ast::Operator::NotEq(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::And => {
-                Expression::Operator(ast::Operator::And(Box::new(lhr), Box::new(rhs)))
-            }
-            InfixOperator::Or => {
-                Expression::Operator(ast::Operator::Or(Box::new(lhr), Box::new(rhs)))
-            }
+            InfixOperator::Add => Ok(Expression::Operator(ast::Operator::Add(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Sub => Ok(Expression::Operator(ast::Operator::Sub(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Mul => Ok(Expression::Operator(ast::Operator::Mul(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Div => Ok(Expression::Operator(ast::Operator::Div(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Gt => Ok(Expression::Operator(ast::Operator::Gt(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Gte => Ok(Expression::Operator(ast::Operator::Gte(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Lt => Ok(Expression::Operator(ast::Operator::Lt(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Lte => Ok(Expression::Operator(ast::Operator::Lte(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Eq => Ok(Expression::Operator(ast::Operator::Eq(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::NotEq => Ok(Expression::Operator(ast::Operator::NotEq(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::And => Ok(Expression::Operator(ast::Operator::And(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            InfixOperator::Or => Ok(Expression::Operator(ast::Operator::Or(
+                Box::new(lhr),
+                Box::new(rhs),
+            ))),
+            _ => return Err(Error::UnKnownInfixOperator(format!("{:?}", self))),
         }
     }
 }
@@ -481,10 +537,23 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Table {
+                from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                },
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT 1").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(ast::Expression::Literal(ast::Literal::Int(1)), None,)],
+                from: None,
                 r#where: None,
                 group_by: None,
             }
@@ -503,10 +572,10 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Table {
+                from: Some(ast::From::Table {
                     name: String::from("public.users"),
                     alias: Some(String::from("u")),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -522,10 +591,10 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Table {
+                from: Some(ast::From::Table {
                     name: String::from("catalog.public.users"),
                     alias: Some(String::from("u")),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -541,7 +610,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::TableFunction {
+                from: Some(ast::From::TableFunction {
                     name: String::from("catalog.public.users"),
                     args: vec![
                         ast::Expression::Literal(ast::Literal::Int(1)),
@@ -552,7 +621,7 @@ mod tests {
                         ),
                     ],
                     alias: None,
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -568,22 +637,22 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::SubQuery {
+                from: Some(ast::From::SubQuery {
                     query: Box::new(ast::Statement::Select {
                         distinct: None,
                         columns: vec![(
                             ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                             None,
                         )],
-                        from: ast::From::Table {
+                        from: Some(ast::From::Table {
                             name: String::from("users"),
                             alias: None,
-                        },
+                        }),
                         r#where: None,
                         group_by: None,
                     }),
                     alias: Some(String::from("u")),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -599,7 +668,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Join {
+                from: Some(ast::From::Join {
                     join_type: ast::JoinType::Inner,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -617,7 +686,7 @@ mod tests {
                             "u2.id".to_owned()
                         ))),
                     ))),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -633,7 +702,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Join {
+                from: Some(ast::From::Join {
                     join_type: ast::JoinType::Left,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -651,7 +720,7 @@ mod tests {
                             "u2.id".to_owned()
                         ))),
                     ))),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -668,7 +737,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Join {
+                from: Some(ast::From::Join {
                     join_type: ast::JoinType::Right,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -686,7 +755,7 @@ mod tests {
                             "u2.id".to_owned()
                         ))),
                     ))),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -702,7 +771,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Join {
+                from: Some(ast::From::Join {
                     join_type: ast::JoinType::Full,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -720,7 +789,7 @@ mod tests {
                             "u2.id".to_owned()
                         ))),
                     ))),
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -736,7 +805,7 @@ mod tests {
                     Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Join {
+                from: Some(ast::From::Join {
                     join_type: ast::JoinType::Cross,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -747,7 +816,7 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: None,
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -766,10 +835,10 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
                     None,
                 )],
-                from: ast::From::Table {
+                from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                },
+                }),
                 r#where: None,
                 group_by: None,
             }
@@ -788,11 +857,171 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("school".to_owned())),
                     None,
                 )],
-                from: ast::From::Table {
+                from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                },
+                }),
                 r#where: None,
+                group_by: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_where() {
+        let stmt = parse_stmt("SELECT * FROM users WHERE id = 1;").unwrap();
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::Operator(ast::Operator::Eq(
+                    Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                ))),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id = 1 AND name = 'foo';").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::Operator(ast::Operator::And(
+                    Box::new(Expression::Operator(ast::Operator::Eq(
+                        Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                        Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    ))),
+                    Box::new(Expression::Operator(ast::Operator::Eq(
+                        Box::new(Expression::Literal(ast::Literal::String("name".to_owned()))),
+                        Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
+                    ))),
+                ))),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id = 1 OR name = 'foo';").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::Operator(ast::Operator::Or(
+                    Box::new(Expression::Operator(ast::Operator::Eq(
+                        Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                        Box::new(Expression::Literal(ast::Literal::Int(1))),
+                    ))),
+                    Box::new(Expression::Operator(ast::Operator::Eq(
+                        Box::new(Expression::Literal(ast::Literal::String("name".to_owned()))),
+                        Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
+                    ))),
+                ))),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id in (1,2,3)").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::InList {
+                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    list: vec![
+                        Expression::Literal(ast::Literal::Int(1)),
+                        Expression::Literal(ast::Literal::Int(2)),
+                        Expression::Literal(ast::Literal::Int(3)),
+                    ],
+                    negated: false,
+                }),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id not in (1,2,3)").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::InList {
+                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    list: vec![
+                        Expression::Literal(ast::Literal::Int(1)),
+                        Expression::Literal(ast::Literal::Int(2)),
+                        Expression::Literal(ast::Literal::Int(3)),
+                    ],
+                    negated: true,
+                }),
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE id in ('1','2')").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: Some(Expression::InList {
+                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    list: vec![
+                        Expression::Literal(ast::Literal::String("1".to_owned())),
+                        Expression::Literal(ast::Literal::String("2".to_owned())),
+                    ],
+                    negated: false,
+                }),
                 group_by: None,
             }
         );
