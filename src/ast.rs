@@ -9,7 +9,25 @@ pub enum Statement {
         r#where: Option<Expression>,
         group_by: Option<Vec<Expression>>,
         having: Option<Expression>,
+        order_by: Option<Vec<(Expression, Order)>>,
+        limit: Option<Expression>,
+        offset: Option<Expression>,
     },
+}
+
+#[derive(PartialEq, Debug)]
+pub enum Order {
+    Asc,
+    Desc,
+}
+
+impl Display for Order {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Order::Asc => write!(f, "ASC"),
+            Order::Desc => write!(f, "DESC"),
+        }
+    }
 }
 
 impl Display for Statement {
@@ -22,6 +40,9 @@ impl Display for Statement {
                 r#where,
                 group_by,
                 having,
+                order_by,
+                limit,
+                offset,
             } => {
                 write!(f, "SELECT ")?;
                 if let Some(d) = distinct {
@@ -72,6 +93,26 @@ impl Display for Statement {
 
                 if let Some(having) = having {
                     write!(f, " HAVING {}", having)?;
+                }
+
+                if let Some(order_by) = order_by {
+                    write!(
+                        f,
+                        " ORDER BY {}",
+                        order_by
+                            .iter()
+                            .map(|(e, o)| format!("{} {}", e, o))
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )?;
+                }
+
+                if let Some(limit) = limit {
+                    write!(f, " LIMIT {}", limit)?;
+                }
+
+                if let Some(offset) = offset {
+                    write!(f, " OFFSET {}", offset)?;
                 }
                 Ok(())
             }

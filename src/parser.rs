@@ -1,5 +1,5 @@
 use crate::{
-    ast::{self, Expression, Statement},
+    ast::{self, Expression, Order, Statement},
     error::{Error, Result},
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
@@ -43,6 +43,9 @@ impl Parser {
                 r#where: None,
                 group_by: None,
                 having: None,
+                order_by: None,
+                limit: None,
+                offset: None,
             });
         }
         let from = self.parse_from_statment()?;
@@ -74,6 +77,33 @@ impl Parser {
             None
         };
 
+        let order_by = if self
+            .next_if_token(TokenType::Keyword(Keyword::Order))
+            .is_some()
+        {
+            Some(self.parse_order_by()?)
+        } else {
+            None
+        };
+
+        let limit = if self
+            .next_if_token(TokenType::Keyword(Keyword::Limit))
+            .is_some()
+        {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+
+        let offset = if self
+            .next_if_token(TokenType::Keyword(Keyword::Offset))
+            .is_some()
+        {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+
         Ok(Statement::Select {
             distinct,
             columns,
@@ -81,7 +111,36 @@ impl Parser {
             r#where,
             group_by,
             having,
+            order_by,
+            limit,
+            offset,
         })
+    }
+
+    fn parse_order_by(&mut self) -> Result<Vec<(Expression, Order)>> {
+        self.next_if_token(TokenType::Keyword(Keyword::By))
+            .ok_or(Error::UnexpectedEOF)?;
+
+        let mut order_fields = vec![];
+        loop {
+            let expr = self.parse_expression(0)?;
+            let mut order = ast::Order::Asc;
+
+            if self
+                .next_if_token(TokenType::Keyword(Keyword::Desc))
+                .is_some()
+            {
+                order = ast::Order::Desc;
+            }
+
+            order_fields.push((expr, order));
+
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
+
+        Ok(order_fields)
     }
 
     fn parse_group_by(&mut self) -> Result<Vec<Expression>> {
@@ -575,6 +634,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 columns: vec![(
                     ast::Expression::Literal(ast::Literal::String("*".to_owned())),
@@ -595,6 +657,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 columns: vec![(ast::Expression::Literal(ast::Literal::Int(1)), None,)],
                 from: None,
@@ -612,6 +677,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -632,6 +700,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -652,6 +723,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -680,6 +754,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -688,6 +765,9 @@ mod tests {
                 )],
                 from: Some(ast::From::SubQuery {
                     query: Box::new(ast::Statement::Select {
+                        order_by: None,
+                        limit: None,
+                        offset: None,
                         having: None,
                         distinct: None,
                         columns: vec![(
@@ -713,6 +793,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -748,6 +831,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -784,6 +870,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 distinct: None,
                 having: None,
                 columns: vec![(
@@ -819,6 +908,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -854,6 +946,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -879,12 +974,213 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_order_by() {
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: Some(vec![(
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Order::Asc,
+                )]),
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id ASC;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: Some(vec![(
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Order::Asc,
+                )]),
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id,name,age;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: Some(vec![
+                    (
+                        ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                        ast::Order::Asc,
+                    ),
+                    (
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                        ast::Order::Asc,
+                    ),
+                    (
+                        ast::Expression::Literal(ast::Literal::String("age".to_owned())),
+                        ast::Order::Asc,
+                    ),
+                ]),
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id DESC;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: Some(vec![(
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Order::Desc,
+                )]),
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users ORDER BY id DESC, name ASC;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: Some(vec![
+                    (
+                        ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                        ast::Order::Desc,
+                    ),
+                    (
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                        ast::Order::Asc,
+                    ),
+                ]),
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_limit_offset() {
+        let stmt = parse_stmt("SELECT * FROM users LIMIT 10;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: None,
+                limit: Some(ast::Expression::Literal(ast::Literal::Int(10))),
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users LIMIT 10 OFFSET 10;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: None,
+                limit: Some(ast::Expression::Literal(ast::Literal::Int(10))),
+                offset: Some(ast::Expression::Literal(ast::Literal::Int(10))),
+                having: None,
+                distinct: None,
+                columns: vec![(
+                    Expression::Literal(ast::Literal::String("*".to_owned())),
+                    None,
+                )],
+                from: Some(ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }),
+                r#where: None,
+                group_by: None,
+            }
+        );
+    }
+
+    #[test]
     fn test_parse_distinct_select_statement() {
         let stmt = parse_stmt("SELECT DISTINCT * FROM users;").unwrap();
 
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: Some(ast::Distinct::ALL),
                 columns: vec![(
@@ -905,6 +1201,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: Some(ast::Distinct::DISTINCT(vec![
                     ast::Expression::Literal(ast::Literal::String("name".to_owned())),
@@ -930,6 +1229,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -953,6 +1255,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -982,6 +1287,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1011,6 +1319,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1039,6 +1350,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1067,6 +1381,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1094,6 +1411,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1121,6 +1441,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1134,6 +1457,9 @@ mod tests {
                 r#where: Some(Expression::InSubQuery {
                     field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
                     query: Box::new(ast::Statement::Select {
+                        order_by: None,
+                        limit: None,
+                        offset: None,
                         having: None,
                         distinct: None,
                         columns: vec![(
@@ -1161,6 +1487,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1183,6 +1512,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: None,
                 distinct: None,
                 columns: vec![(
@@ -1206,6 +1538,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
                 having: Some(Expression::Operator(ast::Operator::Eq(
                     Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
