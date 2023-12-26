@@ -1,14 +1,17 @@
+use std::{iter::Peekable, str::Chars};
+
 use crate::token::{Token, TokenType};
 
-pub struct Lexer {
-    input: String,
+const EMPTY_CHAR: char = '\0';
+
+pub struct Lexer<'a> {
+    peekable: Peekable<Chars<'a>>,
+    line: usize,
     position: usize,
-    read_position: usize,
-    // TODO support full unicode
-    ch: u8,
+    ch: char,
 }
 
-impl Iterator for Lexer {
+impl<'a> Iterator for Lexer<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -21,79 +24,82 @@ impl Iterator for Lexer {
     }
 }
 
-impl Lexer {
-    pub fn new(input: String) -> Lexer {
-        let mut l = Lexer {
-            input,
-            position: 0,
-            read_position: 0,
-            ch: 0,
-        };
-        l.read_char();
-        l
+impl<'a> Lexer<'a> {
+    pub fn new(input: &'a str) -> Self {
+        let mut peekable = input.chars().peekable();
+        Lexer {
+            ch: peekable.next().unwrap_or(EMPTY_CHAR),
+            peekable,
+            line: 1,
+            position: 1,
+        }
     }
 
     fn read_char(&mut self) {
-        if self.read_position >= self.input.len() {
-            self.ch = 0;
+        if let Some(ch) = self.peekable.next() {
+            self.ch = ch;
         } else {
-            self.ch = self.input.as_bytes()[self.read_position];
+            self.ch = EMPTY_CHAR;
         }
-        self.position = self.read_position;
-        self.read_position += 1;
+
+        if self.ch == '\n' {
+            self.line += 1;
+        }
+
+        self.position += 1;
     }
 
     fn next_token(&mut self) -> Token {
         self.skip_whitespace();
         let literal = char::from(self.ch).to_string();
         let tok = match self.ch {
-            0 => Token::new(TokenType::EOF, "".to_owned()),
-            b'=' => Token::new(TokenType::Eq, "=".to_owned()),
-            b'!' => {
-                if self.peek_char() == b'=' {
+            EMPTY_CHAR => Token::new(TokenType::EOF, "".to_owned()),
+            '=' => Token::new(TokenType::Eq, "=".to_owned()),
+            '!' => {
+                if self.peek_char() == '=' {
                     self.read_char();
                     Token::new(TokenType::NotEq, "!=".to_owned())
                 } else {
                     Token::new(TokenType::Bang, literal)
                 }
             }
-            b'<' => {
-                if self.peek_char() == b'=' {
+            '<' => {
+                if self.peek_char() == '=' {
                     self.read_char();
                     Token::new(TokenType::Lte, "<=".to_owned())
                 } else {
                     Token::new(TokenType::Lt, literal)
                 }
             }
-            b'>' => {
-                if self.peek_char() == b'=' {
+            '>' => {
+                if self.peek_char() == '=' {
                     self.read_char();
                     Token::new(TokenType::Gte, ">=".to_owned())
                 } else {
                     Token::new(TokenType::Gt, literal)
                 }
             }
-            b';' => Token::new(TokenType::Semicolon, literal),
-            b'.' => Token::new(TokenType::Period, literal),
-            b'(' => Token::new(TokenType::LParen, literal),
-            b')' => Token::new(TokenType::RParen, literal),
-            b',' => Token::new(TokenType::Comma, literal),
-            b'+' => Token::new(TokenType::Plus, literal),
-            b'{' => Token::new(TokenType::LBrace, literal),
-            b'}' => Token::new(TokenType::RBrace, literal),
-            b'-' => Token::new(TokenType::Minus, literal),
-            b'*' => Token::new(TokenType::Asterisk, literal),
-            b'/' => Token::new(TokenType::Slash, literal),
-            b'?' => Token::new(TokenType::Ident, literal),
-            b'\'' => {
+            ';' => Token::new(TokenType::Semicolon, literal),
+            '.' => Token::new(TokenType::Period, literal),
+            '(' => Token::new(TokenType::LParen, literal),
+            ')' => Token::new(TokenType::RParen, literal),
+            ',' => Token::new(TokenType::Comma, literal),
+            '+' => Token::new(TokenType::Plus, literal),
+            '{' => Token::new(TokenType::LBrace, literal),
+            '}' => Token::new(TokenType::RBrace, literal),
+            '-' => Token::new(TokenType::Minus, literal),
+            '*' => Token::new(TokenType::Asterisk, literal),
+            '/' => Token::new(TokenType::Slash, literal),
+            '?' => Token::new(TokenType::Ident, literal),
+            '\'' => {
                 let mut s = String::new();
                 loop {
                     self.read_char();
                     match self.ch {
-                        b'\'' => {
+                        '\'' => {
                             break;
                         }
-                        0 => return Token::new(TokenType::ILLIGAL, literal),
+                        EMPTY_CHAR => return Token::new(TokenType::ILLIGAL, literal),
                         _ => {
                             s.push(char::from(self.ch));
                         }
@@ -116,20 +122,22 @@ impl Lexer {
     }
 
     fn read_literal(&mut self) -> String {
-        let position = self.position;
-        while self.ch.is_ascii_alphabetic() || self.ch.is_ascii_alphanumeric() || self.ch == b'_' {
+        let mut literal = String::new();
+        while self.ch.is_ascii_alphabetic() || self.ch.is_ascii_alphanumeric() || self.ch == '_' {
+            literal.push(self.ch);
             self.read_char();
         }
 
-        self.input[position..self.position].to_owned()
+        literal
     }
 
     fn read_number(&mut self) -> String {
-        let position = self.position;
+        let mut number = String::new();
         while self.ch.is_ascii_digit() {
+            number.push(self.ch);
             self.read_char();
         }
-        self.input[position..self.position].to_owned()
+        number
     }
 
     fn skip_whitespace(&mut self) {
@@ -138,12 +146,8 @@ impl Lexer {
         }
     }
 
-    fn peek_char(&self) -> u8 {
-        if self.read_position >= self.input.len() {
-            0
-        } else {
-            self.input.as_bytes()[self.read_position]
-        }
+    fn peek_char(&mut self) -> char {
+        self.peekable.peek().copied().unwrap_or(EMPTY_CHAR)
     }
 }
 
@@ -154,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_single_char_token() {
-        let input = String::from("=-+(){},;*/<>!?");
+        let input = "=-+(){},;*/<>!?";
         let tests = vec![
             (TokenType::Eq, "="),
             (TokenType::Minus, "-"),
@@ -181,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_two_char_token() {
-        let input = String::from("=!=<=>=");
+        let input = "=!=<=>=";
         let tests = vec![
             (TokenType::Eq, "="),
             (TokenType::NotEq, "!="),
@@ -199,9 +203,7 @@ mod tests {
 
     #[test]
     fn test_next_token() {
-        let input = String::from(
-            "select distinct * from users as u2 where id = ? and name = ? or age = 12 group by name limit 10;",
-        );
+        let input = "select distinct * from users as u2 where id = ? and name = ? or age = 12 group by name limit 10;";
         let tests = vec![
             (TokenType::Keyword(Keyword::Select), "select"),
             (TokenType::Keyword(Keyword::Distinct), "distinct"),

@@ -6,12 +6,12 @@ use crate::{
 };
 use std::iter::Peekable;
 
-pub struct Parser {
-    lexer: Peekable<Lexer>,
+pub struct Parser<'a> {
+    lexer: Peekable<Lexer<'a>>,
 }
 
-impl Parser {
-    pub fn new(sql: String) -> Parser {
+impl<'a> Parser<'a> {
+    pub fn new(sql: &'a str) -> Parser<'a> {
         Parser {
             lexer: Lexer::new(sql).peekable(),
         }
@@ -1015,7 +1015,6 @@ mod tests {
                 )]),
             }
         );
-        
     }
 
     #[test]
@@ -2197,12 +2196,12 @@ mod tests {
     }
 
     fn parse_stmt(input: &str) -> Result<Statement> {
-        let mut parser = Parser::new(input.to_owned());
+        let mut parser = Parser::new(input);
         parser.parse()
     }
 
     fn parse_expr(input: &str) -> Result<Expression> {
-        let mut parser = Parser::new(input.to_owned());
+        let mut parser = Parser::new(input);
         parser.parse_expression(0)
     }
 }
