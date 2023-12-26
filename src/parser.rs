@@ -1,5 +1,5 @@
 use crate::{
-    ast::{self, Expression, Order, Statement},
+    ast::{self, Expression, OnConflict, Order, Statement},
     error::{Error, Result},
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
@@ -18,13 +18,67 @@ impl Parser {
     }
 
     pub fn parse(&mut self) -> Result<Statement> {
-        match self.lexer.next() {
-            Some(Token {
-                token_type: TokenType::Keyword(Keyword::Select),
-                ..
-            }) => self.parse_select_statement(),
+        let token = self.lexer.next().ok_or(Error::UnexpectedEOF)?;
+
+        match token.token_type {
+            TokenType::Keyword(Keyword::Select) => self.parse_select_statement(),
+            TokenType::Keyword(Keyword::Insert) => self.parse_insert_statement(),
             _ => Err(Error::UnexpectedEOF),
         }
+    }
+
+    fn parse_insert_statement(&mut self) -> Result<Statement> {
+        self.next_if_token(TokenType::Keyword(Keyword::Into))
+            .ok_or(Error::UnexpectedEOF)?;
+
+        let table_name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+        let alias = self.parse_alias();
+
+        let columns = if self.next_if_token(TokenType::LParen).is_some() {
+            let columns = self
+                .parse_columns()?
+                .into_iter()
+                .map(|v| v.0)
+                .collect::<Vec<_>>();
+
+            self.next_if_token(TokenType::RParen)
+                .ok_or(Error::UnexpectedEOF)?;
+
+            Some(columns)
+        } else {
+            None
+        };
+
+        self.next_if_token(TokenType::Keyword(Keyword::Values))
+            .ok_or(Error::UnexpectedEOF)?;
+        let values = self.parse_values()?;
+
+        let on_conflict = if self
+            .next_if_token(TokenType::Keyword(Keyword::On))
+            .is_some()
+        {
+            Some(self.parse_on_conflict()?)
+        } else {
+            None
+        };
+
+        let returning = if self
+            .next_if_token(TokenType::Keyword(Keyword::Returning))
+            .is_some()
+        {
+            Some(self.parse_columns()?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Insert {
+            table: (table_name, alias),
+            columns,
+            values,
+            on_conflict,
+            returning,
+        })
     }
 
     fn parse_select_statement(&mut self) -> Result<Statement> {
@@ -117,6 +171,71 @@ impl Parser {
         })
     }
 
+    fn parse_on_conflict(&mut self) -> Result<OnConflict> {
+        self.next_if_token(TokenType::Keyword(Keyword::Conflict))
+            .ok_or(Error::UnexpectedEOF)?;
+
+        self.next_if_token(TokenType::LParen)
+            .ok_or(Error::UnexpectedEOF)?;
+
+        let columns = self.parse_columns()?.into_iter().map(|v| v.0).collect();
+
+        self.next_if_token(TokenType::RParen)
+            .ok_or(Error::UnexpectedEOF)?;
+
+        self.next_if_token(TokenType::Keyword(Keyword::Do))
+            .ok_or(Error::UnexpectedEOF)?;
+
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::Nothing))
+            .is_some()
+        {
+            Ok(OnConflict::DoNothing)
+        } else if self
+            .next_if_token(TokenType::Keyword(Keyword::Update))
+            .is_some()
+        {
+            self.next_if_token(TokenType::Keyword(Keyword::Set))
+                .ok_or(Error::UnexpectedEOF)?;
+
+            let mut exprs = Vec::new();
+            loop {
+                exprs.push(self.parse_expression(0)?);
+                if self.next_if_token(TokenType::Comma).is_none() {
+                    break;
+                }
+            }
+
+            Ok(OnConflict::DoUpdate {
+                constraints: columns,
+                values: exprs,
+            })
+        } else {
+            Err(Error::UnexpectedEOF)
+        }
+    }
+
+    fn parse_values(&mut self) -> Result<Vec<Vec<Expression>>> {
+        let mut values = Vec::new();
+        loop {
+            if self.next_if_token(TokenType::Comma).is_some() {
+                continue;
+            }
+            let mut row = Vec::new();
+            self.next_if_token(TokenType::LParen)
+                .ok_or(Error::UnexpectedEOF)?;
+            while self.next_if_token(TokenType::RParen).is_none() {
+                row.push(self.parse_expression(0)?);
+                self.next_if_token(TokenType::Comma);
+            }
+            values.push(row);
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
+        Ok(values)
+    }
+
     fn parse_order_by(&mut self) -> Result<Vec<(Expression, Order)>> {
         self.next_if_token(TokenType::Keyword(Keyword::By))
             .ok_or(Error::UnexpectedEOF)?;
@@ -192,7 +311,6 @@ impl Parser {
             if self.next_if_token(TokenType::Comma).is_some() {
                 continue;
             }
-
             let expr = self.parse_expression(0)?;
             let alias = if self
                 .next_if_token(TokenType::Keyword(Keyword::As))
@@ -626,6 +744,279 @@ mod tests {
     use super::Parser;
     use crate::ast::{self, Expression, Statement};
     use crate::error::Result;
+
+    #[test]
+    fn test_parse_insert_statement() {
+        let stmt = parse_stmt("INSERT INTO users VALUES (1, 'name');").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: None,
+                values: vec![vec![
+                    ast::Expression::Literal(ast::Literal::Int(1)),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]],
+                on_conflict: None,
+                returning: None,
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name');").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![vec![
+                    ast::Expression::Literal(ast::Literal::Int(1)),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]],
+                on_conflict: None,
+                returning: None,
+            }
+        );
+
+        let stmt =
+            parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name'), (2, 'name2');").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ],
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(2)),
+                        ast::Expression::Literal(ast::Literal::String("name2".to_owned())),
+                    ],
+                ],
+                on_conflict: None,
+                returning: None,
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name'), (2, 'name2') ON CONFLICT (id) DO NOTHING;")
+            .unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ],
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(2)),
+                        ast::Expression::Literal(ast::Literal::String("name2".to_owned())),
+                    ],
+                ],
+                on_conflict: Some(ast::OnConflict::DoNothing),
+                returning: None,
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name'), (2, 'name2') ON CONFLICT (id) DO UPDATE SET name = 'name';")
+            .unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ],
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(2)),
+                        ast::Expression::Literal(ast::Literal::String("name2".to_owned())),
+                    ],
+                ],
+                on_conflict: Some(ast::OnConflict::DoUpdate {
+                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
+                        "id".to_owned()
+                    ))],
+                    values: vec![ast::Expression::Operator(ast::Operator::Eq(
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "name".to_owned()
+                        ))),
+                        Box::new(ast::Expression::Literal(ast::Literal::String(
+                            "name".to_owned()
+                        ))),
+                    ))],
+                }),
+                returning: None,
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name'), (2, 'name2') ON CONFLICT (id) DO UPDATE SET name = 'name', id = 1;")
+            .unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ],
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(2)),
+                        ast::Expression::Literal(ast::Literal::String("name2".to_owned())),
+                    ],
+                ],
+                on_conflict: Some(ast::OnConflict::DoUpdate {
+                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
+                        "id".to_owned()
+                    ))],
+                    values: vec![
+                        ast::Expression::Operator(ast::Operator::Eq(
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "name".to_owned()
+                            ))),
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "name".to_owned()
+                            ))),
+                        )),
+                        ast::Expression::Operator(ast::Operator::Eq(
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "id".to_owned()
+                            ))),
+                            Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
+                        )),
+                    ],
+                }),
+                returning: None,
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name'), (2, 'name2') ON CONFLICT (id) DO UPDATE SET name = 'name', id = 1 RETURNING id;")
+            .unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ],
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(2)),
+                        ast::Expression::Literal(ast::Literal::String("name2".to_owned())),
+                    ],
+                ],
+                on_conflict: Some(ast::OnConflict::DoUpdate {
+                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
+                        "id".to_owned()
+                    ))],
+                    values: vec![
+                        ast::Expression::Operator(ast::Operator::Eq(
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "name".to_owned()
+                            ))),
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "name".to_owned()
+                            ))),
+                        )),
+                        ast::Expression::Operator(ast::Operator::Eq(
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "id".to_owned()
+                            ))),
+                            Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
+                        )),
+                    ],
+                }),
+                returning: Some(vec![(
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    None,
+                )]),
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO users (id, name) VALUES (1, 'name'), (2, 'name2') ON CONFLICT (id) DO UPDATE SET name = 'name', id = 1 RETURNING id AS user_id;")
+            .unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: (String::from("users"), None,),
+                columns: Some(vec![
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                ]),
+                values: vec![
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(1)),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ],
+                    vec![
+                        ast::Expression::Literal(ast::Literal::Int(2)),
+                        ast::Expression::Literal(ast::Literal::String("name2".to_owned())),
+                    ],
+                ],
+                on_conflict: Some(ast::OnConflict::DoUpdate {
+                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
+                        "id".to_owned()
+                    ))],
+                    values: vec![
+                        ast::Expression::Operator(ast::Operator::Eq(
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "name".to_owned()
+                            ))),
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "name".to_owned()
+                            ))),
+                        )),
+                        ast::Expression::Operator(ast::Operator::Eq(
+                            Box::new(ast::Expression::Literal(ast::Literal::String(
+                                "id".to_owned()
+                            ))),
+                            Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
+                        )),
+                    ],
+                }),
+                returning: Some(vec![(
+                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    Some(String::from("user_id")),
+                )]),
+            }
+        );
+        
+    }
 
     #[test]
     fn test_parse_select_statement() {

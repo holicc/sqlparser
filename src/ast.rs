@@ -13,12 +13,63 @@ pub enum Statement {
         limit: Option<Expression>,
         offset: Option<Expression>,
     },
+    Insert {
+        table: (String, Option<String>),
+        columns: Option<Vec<Expression>>,
+        values: Vec<Vec<Expression>>,
+        on_conflict: Option<OnConflict>,
+        returning: Option<Vec<(Expression, Option<String>)>>,
+    },
+}
+
+#[derive(PartialEq, Debug)]
+pub enum OnConflict {
+    DoNothing,
+    /// `ON CONFLICT (constraint) DO UPDATE SET values[expressions]`
+    DoUpdate {
+        constraints: Vec<Expression>,
+        values: Vec<Expression>,
+    },
 }
 
 #[derive(PartialEq, Debug)]
 pub enum Order {
     Asc,
     Desc,
+}
+
+impl Display for OnConflict {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OnConflict::DoNothing => write!(f, "DO NOTHING"),
+            OnConflict::DoUpdate {
+                constraints,
+                values,
+            } => {
+                write!(
+                    f,
+                    "DO UPDATE SET {}",
+                    values
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?;
+                if !constraints.is_empty() {
+                    write!(
+                        f,
+                        " WHERE {}",
+                        constraints
+                            .iter()
+                            .map(|e| e.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )?;
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 impl Display for Order {
@@ -113,6 +164,64 @@ impl Display for Statement {
 
                 if let Some(offset) = offset {
                     write!(f, " OFFSET {}", offset)?;
+                }
+                Ok(())
+            }
+            Statement::Insert {
+                table,
+                columns,
+                values,
+                on_conflict,
+                returning,
+            } => {
+                write!(f, "INSERT INTO {} ", table.0)?;
+                if let Some(a) = &table.1 {
+                    write!(f, "AS {} ", a)?;
+                }
+                if let Some(c) = columns {
+                    write!(
+                        f,
+                        "({}) ",
+                        c.iter()
+                            .map(|c| c.to_string())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )?;
+                }
+                write!(
+                    f,
+                    "VALUES {}",
+                    values
+                        .iter()
+                        .map(|v| {
+                            format!(
+                                "({})",
+                                v.iter()
+                                    .map(|e| e.to_string())
+                                    .collect::<Vec<String>>()
+                                    .join(", ")
+                            )
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?;
+
+                if let Some(o) = on_conflict {
+                    write!(f, " ON CONFLICT {}", o)?;
+                }
+
+                if let Some(r) = returning {
+                    write!(
+                        f,
+                        " RETURNING {}",
+                        r.iter()
+                            .map(|(e, a)| match a {
+                                Some(a) => format!("{} AS {}", e, a),
+                                None => e.to_string(),
+                            })
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    )?;
                 }
                 Ok(())
             }

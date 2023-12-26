@@ -117,7 +117,7 @@ impl Lexer {
 
     fn read_literal(&mut self) -> String {
         let position = self.position;
-        while self.ch.is_ascii_alphabetic() || self.ch.is_ascii_alphanumeric() {
+        while self.ch.is_ascii_alphabetic() || self.ch.is_ascii_alphanumeric() || self.ch == b'_' {
             self.read_char();
         }
 
