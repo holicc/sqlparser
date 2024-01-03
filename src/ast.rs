@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+};
 
 #[derive(PartialEq, Debug)]
 pub enum Statement {
@@ -19,6 +22,11 @@ pub enum Statement {
         values: Vec<Vec<Expression>>,
         on_conflict: Option<OnConflict>,
         returning: Option<Vec<(Expression, Option<String>)>>,
+    },
+    Update {
+        table: String,
+        assignments: BTreeMap<String, Expression>,
+        r#where: Option<Expression>,
     },
 }
 
@@ -223,6 +231,28 @@ impl Display for Statement {
                             .join(", ")
                     )?;
                 }
+                Ok(())
+            }
+            Statement::Update {
+                table,
+                assignments,
+                r#where,
+            } => {
+                write!(
+                    f,
+                    "UPDATE {} SET {}",
+                    table,
+                    assignments
+                        .into_iter()
+                        .map(|(k, v)| format!("{} = {}", k, v))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?;
+
+                if let Some(w) = r#where {
+                    write!(f, "WHERE {}", w)?;
+                }
+
                 Ok(())
             }
         }

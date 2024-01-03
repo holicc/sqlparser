@@ -136,16 +136,18 @@ impl TokenType {
 #[derive(Debug, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
-    // FIXME using byte for performance
     pub literal: String,
-    // TODO add line and column
+    pub line: usize,
+    pub column: usize,
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, literal: String) -> Token {
+    pub fn new(token_type: TokenType, literal: String, col: usize, line: usize) -> Token {
         Token {
             token_type,
             literal,
+            line,
+            column: col,
         }
     }
 }

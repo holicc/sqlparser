@@ -4,7 +4,7 @@ use crate::{
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
 };
-use std::iter::Peekable;
+use std::{collections::BTreeMap, iter::Peekable};
 
 pub struct Parser<'a> {
     lexer: Peekable<Lexer<'a>>,
@@ -23,8 +23,49 @@ impl<'a> Parser<'a> {
         match token.token_type {
             TokenType::Keyword(Keyword::Select) => self.parse_select_statement(),
             TokenType::Keyword(Keyword::Insert) => self.parse_insert_statement(),
-            _ => Err(Error::UnexpectedEOF),
+            TokenType::Keyword(Keyword::Update) => self.parse_update_statement(),
+            _ => Err(Error::UnexpectedToken(token)),
         }
+    }
+
+    fn parse_update_statement(&mut self) -> Result<Statement> {
+        let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+        self.next_except(TokenType::Keyword(Keyword::Set))?;
+
+        let mut assignments = BTreeMap::new();
+        loop {
+            let column = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+            self.next_except(TokenType::Eq)?;
+
+            let value = self.parse_expression(0)?;
+
+            if assignments.contains_key(&column) {
+                return Err(Error::DuplicateColumn(column));
+            }
+
+            assignments.insert(column, value);
+
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
+
+        let r#where = if self
+            .next_if_token(TokenType::Keyword(Keyword::Where))
+            .is_some()
+        {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Update {
+            table,
+            assignments,
+            r#where,
+        })
     }
 
     fn parse_insert_statement(&mut self) -> Result<Statement> {
@@ -519,6 +560,7 @@ impl<'a> Parser<'a> {
             Token {
                 token_type: TokenType::Ident,
                 mut literal,
+                ..
             } => {
                 // parse function
                 if self.next_if_token(TokenType::LParen).is_some() {
@@ -545,12 +587,14 @@ impl<'a> Parser<'a> {
             Token {
                 token_type: TokenType::Int,
                 literal,
+                ..
             } => Ok(ast::Expression::Literal(ast::Literal::Int(
                 literal.parse().map_err(|e| Error::ParseIntError(e))?,
             ))),
             Token {
                 token_type: TokenType::String,
                 literal,
+                ..
             } => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
             Token {
                 token_type: TokenType::Keyword(Keyword::True),
@@ -571,6 +615,17 @@ impl<'a> Parser<'a> {
             }
             token => Err(Error::UnexpectedToken(token)),
         }
+    }
+
+    fn next_except(&mut self, except: TokenType) -> Result<Token> {
+        if let Some(token) = self.lexer.next() {
+            if token.token_type != except {
+                return Err(Error::UnexpectedToken(token));
+            }
+            return Ok(token);
+        }
+
+        Err(Error::UnexpectedEOF)
     }
 
     fn next_ident(&mut self) -> Option<String> {
@@ -739,11 +794,88 @@ impl InfixOperator {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::vec;
 
     use super::Parser;
     use crate::ast::{self, Expression, Statement};
     use crate::error::Result;
+
+    #[test]
+    fn test_parser_error() {
+        let stmt = parse_stmt("SELEC").err().unwrap();
+        assert_eq!(
+            stmt.to_string(),
+            "Unexpected token: 'SELEC' at line: 1, column: 5"
+        );
+
+        let stmt = parse_stmt("SELECT * FROM").err().unwrap();
+        assert_eq!(stmt.to_string(), "Unexpected EOF");
+
+        let stmt = parse_stmt("SELECT * FROM users WHERE").err().unwrap();
+        assert_eq!(stmt.to_string(), "Unexpected EOF");
+    }
+
+    #[test]
+    fn test_parse_update_statement() {
+        let stmt = parse_stmt("UPDATE users SET name = 'name'").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Update {
+                table: "users".to_owned(),
+                assignments: BTreeMap::from([(
+                    "name".to_owned(),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned()))
+                )]),
+                r#where: None,
+            }
+        );
+
+        let stmt = parse_stmt("UPDATE users SET name = 'name' WHERE id = 1").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Update {
+                table: "users".to_owned(),
+                assignments: BTreeMap::from([(
+                    "name".to_owned(),
+                    ast::Expression::Literal(ast::Literal::String("name".to_owned()))
+                )]),
+                r#where: Some(ast::Expression::Operator(ast::Operator::Eq(
+                    Box::new(ast::Expression::Literal(ast::Literal::String(
+                        "id".to_owned()
+                    ))),
+                    Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
+                ))),
+            }
+        );
+
+        let stmt = parse_stmt("UPDATE users SET name = 'name', id = 1 WHERE id = 1;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Update {
+                table: "users".to_owned(),
+                assignments: BTreeMap::from([
+                    (
+                        "name".to_owned(),
+                        ast::Expression::Literal(ast::Literal::String("name".to_owned()))
+                    ),
+                    (
+                        "id".to_owned(),
+                        ast::Expression::Literal(ast::Literal::Int(1))
+                    ),
+                ]),
+                r#where: Some(ast::Expression::Operator(ast::Operator::Eq(
+                    Box::new(ast::Expression::Literal(ast::Literal::String(
+                        "id".to_owned()
+                    ))),
+                    Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
+                ))),
+            }
+        );
+    }
 
     #[test]
     fn test_parse_insert_statement() {

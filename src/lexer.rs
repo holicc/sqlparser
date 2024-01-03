@@ -7,7 +7,7 @@ const EMPTY_CHAR: char = '\0';
 pub struct Lexer<'a> {
     peekable: Peekable<Chars<'a>>,
     line: usize,
-    position: usize,
+    col: usize,
     ch: char,
 }
 
@@ -31,7 +31,7 @@ impl<'a> Lexer<'a> {
             ch: peekable.next().unwrap_or(EMPTY_CHAR),
             peekable,
             line: 1,
-            position: 1,
+            col: 1,
         }
     }
 
@@ -40,57 +40,58 @@ impl<'a> Lexer<'a> {
             self.ch = ch;
         } else {
             self.ch = EMPTY_CHAR;
+            return;
         }
 
         if self.ch == '\n' {
             self.line += 1;
         }
 
-        self.position += 1;
+        self.col += 1;
     }
 
     fn next_token(&mut self) -> Token {
         self.skip_whitespace();
         let literal = char::from(self.ch).to_string();
         let tok = match self.ch {
-            EMPTY_CHAR => Token::new(TokenType::EOF, "".to_owned()),
-            '=' => Token::new(TokenType::Eq, "=".to_owned()),
+            EMPTY_CHAR => Token::new(TokenType::EOF, "".to_owned(), self.col, self.line),
+            '=' => Token::new(TokenType::Eq, "=".to_owned(), self.col, self.line),
             '!' => {
                 if self.peek_char() == '=' {
                     self.read_char();
-                    Token::new(TokenType::NotEq, "!=".to_owned())
+                    Token::new(TokenType::NotEq, "!=".to_owned(), self.col, self.line)
                 } else {
-                    Token::new(TokenType::Bang, literal)
+                    Token::new(TokenType::Bang, literal, self.col, self.line)
                 }
             }
             '<' => {
                 if self.peek_char() == '=' {
                     self.read_char();
-                    Token::new(TokenType::Lte, "<=".to_owned())
+                    Token::new(TokenType::Lte, "<=".to_owned(), self.col, self.line)
                 } else {
-                    Token::new(TokenType::Lt, literal)
+                    Token::new(TokenType::Lt, literal, self.col, self.line)
                 }
             }
             '>' => {
                 if self.peek_char() == '=' {
                     self.read_char();
-                    Token::new(TokenType::Gte, ">=".to_owned())
+                    Token::new(TokenType::Gte, ">=".to_owned(), self.col, self.line)
                 } else {
-                    Token::new(TokenType::Gt, literal)
+                    Token::new(TokenType::Gt, literal, self.col, self.line)
                 }
             }
-            ';' => Token::new(TokenType::Semicolon, literal),
-            '.' => Token::new(TokenType::Period, literal),
-            '(' => Token::new(TokenType::LParen, literal),
-            ')' => Token::new(TokenType::RParen, literal),
-            ',' => Token::new(TokenType::Comma, literal),
-            '+' => Token::new(TokenType::Plus, literal),
-            '{' => Token::new(TokenType::LBrace, literal),
-            '}' => Token::new(TokenType::RBrace, literal),
-            '-' => Token::new(TokenType::Minus, literal),
-            '*' => Token::new(TokenType::Asterisk, literal),
-            '/' => Token::new(TokenType::Slash, literal),
-            '?' => Token::new(TokenType::Ident, literal),
+            ';' => Token::new(TokenType::Semicolon, literal, self.col, self.line),
+            '.' => Token::new(TokenType::Period, literal, self.col, self.line),
+            '(' => Token::new(TokenType::LParen, literal, self.col, self.line),
+            ')' => Token::new(TokenType::RParen, literal, self.col, self.line),
+            ',' => Token::new(TokenType::Comma, literal, self.col, self.line),
+            '+' => Token::new(TokenType::Plus, literal, self.col, self.line),
+            '{' => Token::new(TokenType::LBrace, literal, self.col, self.line),
+            '}' => Token::new(TokenType::RBrace, literal, self.col, self.line),
+            '-' => Token::new(TokenType::Minus, literal, self.col, self.line),
+            '*' => Token::new(TokenType::Asterisk, literal, self.col, self.line),
+            '/' => Token::new(TokenType::Slash, literal, self.col, self.line),
+            '?' => Token::new(TokenType::Ident, literal, self.col, self.line),
             '\'' => {
                 let mut s = String::new();
                 loop {
@@ -99,23 +100,25 @@ impl<'a> Lexer<'a> {
                         '\'' => {
                             break;
                         }
-                        EMPTY_CHAR => return Token::new(TokenType::ILLIGAL, literal),
+                        EMPTY_CHAR => {
+                            return Token::new(TokenType::ILLIGAL, literal, self.col, self.line)
+                        }
                         _ => {
                             s.push(char::from(self.ch));
                         }
                     }
                 }
-                Token::new(TokenType::String, s)
+                Token::new(TokenType::String, s, self.col, self.line)
             }
             b if b.is_ascii_alphabetic() => {
                 let literal = self.read_literal();
                 let token_type = TokenType::lookup_ident(&literal);
-                return Token::new(token_type, literal);
+                return Token::new(token_type, literal, self.col, self.line);
             }
             b if b.is_ascii_digit() => {
-                return Token::new(TokenType::Int, self.read_number());
+                return Token::new(TokenType::Int, self.read_number(), self.col, self.line);
             }
-            _ => Token::new(TokenType::ILLIGAL, literal),
+            _ => Token::new(TokenType::ILLIGAL, literal, self.col, self.line),
         };
         self.read_char();
         tok
