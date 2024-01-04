@@ -5,6 +5,10 @@ use std::{
 
 #[derive(PartialEq, Debug)]
 pub enum Statement {
+    CreateSchema {
+        schema: String,
+        check_exists: bool,
+    },
     Select {
         distinct: Option<Distinct>,
         columns: Vec<(Expression, Option<String>)>,
@@ -26,6 +30,10 @@ pub enum Statement {
     Update {
         table: String,
         assignments: BTreeMap<String, Expression>,
+        r#where: Option<Expression>,
+    },
+    Delete {
+        table: String,
         r#where: Option<Expression>,
     },
 }
@@ -254,6 +262,23 @@ impl Display for Statement {
                 }
 
                 Ok(())
+            }
+            Statement::Delete { table, r#where } => {
+                write!(f, "DELETE FROM {}", table)?;
+                if let Some(w) = r#where {
+                    write!(f, " WHERE {}", w)?;
+                }
+                Ok(())
+            }
+            Statement::CreateSchema {
+                schema,
+                check_exists,
+            } => {
+                write!(f, "CREATE SCHEMA ")?;
+                if *check_exists {
+                    write!(f, "IF NOT EXISTS ")?;
+                }
+                write!(f, "{}", schema)
             }
         }
     }

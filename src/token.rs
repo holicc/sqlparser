@@ -2,6 +2,11 @@
 pub enum Keyword {
     Select,
     Insert,
+    Delete,
+    Create,
+    Schema,
+    If,
+    Exists,
     From,
     Where,
     And,
@@ -77,6 +82,11 @@ impl TokenType {
         match ident.to_lowercase().as_str() {
             "select" => TokenType::Keyword(Keyword::Select),
             "insert" => TokenType::Keyword(Keyword::Insert),
+            "delete" => TokenType::Keyword(Keyword::Delete),
+            "create" => TokenType::Keyword(Keyword::Create),
+            "schema" => TokenType::Keyword(Keyword::Schema),
+            "if" => TokenType::Keyword(Keyword::If),
+            "exists" => TokenType::Keyword(Keyword::Exists),
             "from" => TokenType::Keyword(Keyword::From),
             "as" => TokenType::Keyword(Keyword::As),
             "where" => TokenType::Keyword(Keyword::Where),

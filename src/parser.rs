@@ -24,8 +24,61 @@ impl<'a> Parser<'a> {
             TokenType::Keyword(Keyword::Select) => self.parse_select_statement(),
             TokenType::Keyword(Keyword::Insert) => self.parse_insert_statement(),
             TokenType::Keyword(Keyword::Update) => self.parse_update_statement(),
+            TokenType::Keyword(Keyword::Delete) => self.parse_delete_statement(),
+            TokenType::Keyword(Keyword::Create) => self.parse_create_statement(),
             _ => Err(Error::UnexpectedToken(token)),
         }
+    }
+
+    fn parse_create_statement(&mut self) -> Result<Statement> {
+        // parse create schema
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::Schema))
+            .is_some()
+        {
+            return self.parse_create_schema();
+        }
+
+        todo!()
+    }
+
+    fn parse_create_schema(&mut self) -> Result<Statement> {
+        let mut check_exists = false;
+
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::If))
+            .is_some()
+        {
+            self.next_except(TokenType::Keyword(Keyword::Not))?;
+            self.next_except(TokenType::Keyword(Keyword::Exists))?;
+
+            check_exists = true;
+        }
+
+        let schema = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+        Ok(Statement::CreateSchema {
+            schema,
+            check_exists,
+        })
+    }
+
+    fn parse_delete_statement(&mut self) -> Result<Statement> {
+        self.next_if_token(TokenType::Keyword(Keyword::From))
+            .ok_or(Error::UnexpectedEOF)?;
+
+        let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+        let r#where = if self
+            .next_if_token(TokenType::Keyword(Keyword::Where))
+            .is_some()
+        {
+            Some(self.parse_expression(0)?)
+        } else {
+            None
+        };
+
+        Ok(Statement::Delete { table, r#where })
     }
 
     fn parse_update_statement(&mut self) -> Result<Statement> {
@@ -814,6 +867,59 @@ mod tests {
 
         let stmt = parse_stmt("SELECT * FROM users WHERE").err().unwrap();
         assert_eq!(stmt.to_string(), "Unexpected EOF");
+    }
+
+    #[test]
+    fn test_parse_create_schema()->Result<()>{
+        let stmt = parse_stmt("CREATE SCHEMA test;")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateSchema {
+                schema: "test".to_owned(),
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE SCHEMA IF NOT EXISTS test;")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateSchema {
+                schema: "test".to_owned(),
+                check_exists: true,
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_delete_statement() -> Result<()> {
+        let stmt = parse_stmt("DELETE FROM users;")?;
+
+        assert_eq!(
+            stmt,
+            Statement::Delete {
+                table: "users".to_owned(),
+                r#where: None,
+            }
+        );
+
+        let stmt = parse_stmt("DELETE FROM users WHERE id = 1;")?;
+
+        assert_eq!(
+            stmt,
+            Statement::Delete {
+                table: "users".to_owned(),
+                r#where: Some(Expression::Operator(ast::Operator::Eq(
+                    Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    Box::new(Expression::Literal(ast::Literal::Int(1))),
+                ))),
+            }
+        );
+
+        Ok(())
     }
 
     #[test]
