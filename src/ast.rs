@@ -9,6 +9,10 @@ pub enum Statement {
         schema: String,
         check_exists: bool,
     },
+    DropSchema {
+        schema: String,
+        check_exists: bool,
+    },
     Select {
         distinct: Option<Distinct>,
         columns: Vec<(Expression, Option<String>)>,
@@ -277,6 +281,16 @@ impl Display for Statement {
                 write!(f, "CREATE SCHEMA ")?;
                 if *check_exists {
                     write!(f, "IF NOT EXISTS ")?;
+                }
+                write!(f, "{}", schema)
+            }
+            Statement::DropSchema {
+                schema,
+                check_exists,
+            } => {
+                write!(f, "DROP SCHEMA ")?;
+                if *check_exists {
+                    write!(f, "IF EXISTS ")?;
                 }
                 write!(f, "{}", schema)
             }

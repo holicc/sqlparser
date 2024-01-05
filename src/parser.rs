@@ -26,7 +26,23 @@ impl<'a> Parser<'a> {
             TokenType::Keyword(Keyword::Update) => self.parse_update_statement(),
             TokenType::Keyword(Keyword::Delete) => self.parse_delete_statement(),
             TokenType::Keyword(Keyword::Create) => self.parse_create_statement(),
+            TokenType::Keyword(Keyword::Drop) => self.parse_drop_statement(),
             _ => Err(Error::UnexpectedToken(token)),
+        }
+    }
+
+    fn parse_drop_statement(&mut self) -> Result<Statement> {
+        match self.lexer.next().ok_or(Error::UnexpectedEOF)?.token_type {
+            TokenType::Keyword(Keyword::Schema) => {
+                let check_exists = self.parse_if_exists()?;
+                let schema = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+                Ok(Statement::DropSchema {
+                    schema,
+                    check_exists,
+                })
+            }
+            _ => unimplemented!(),
         }
     }
 
@@ -43,18 +59,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_create_schema(&mut self) -> Result<Statement> {
-        let mut check_exists = false;
-
-        if self
-            .next_if_token(TokenType::Keyword(Keyword::If))
-            .is_some()
-        {
-            self.next_except(TokenType::Keyword(Keyword::Not))?;
-            self.next_except(TokenType::Keyword(Keyword::Exists))?;
-
-            check_exists = true;
-        }
-
+        let check_exists: bool = self.parse_if_not_exists()?;
         let schema = self.next_ident().ok_or(Error::UnexpectedEOF)?;
 
         Ok(Statement::CreateSchema {
@@ -328,6 +333,33 @@ impl<'a> Parser<'a> {
             }
         }
         Ok(values)
+    }
+
+    fn parse_if_not_exists(&mut self) -> Result<bool> {
+        let mut check_exists = false;
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::If))
+            .is_some()
+        {
+            self.next_except(TokenType::Keyword(Keyword::Not))?;
+            self.next_except(TokenType::Keyword(Keyword::Exists))?;
+
+            check_exists = true;
+        }
+        Ok(check_exists)
+    }
+
+    fn parse_if_exists(&mut self) -> Result<bool> {
+        let mut check_exists = false;
+        if self
+            .next_if_token(TokenType::Keyword(Keyword::If))
+            .is_some()
+        {
+            self.next_except(TokenType::Keyword(Keyword::Exists))?;
+
+            check_exists = true;
+        }
+        Ok(check_exists)
     }
 
     fn parse_order_by(&mut self) -> Result<Vec<(Expression, Order)>> {
@@ -870,7 +902,32 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_create_schema()->Result<()>{
+    fn test_parse_drop_schema() -> Result<()> {
+        let stmt = parse_stmt("DROP SCHEMA test;")?;
+
+        assert_eq!(
+            stmt,
+            Statement::DropSchema {
+                schema: "test".to_owned(),
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("DROP SCHEMA IF EXISTS test;")?;
+
+        assert_eq!(
+            stmt,
+            Statement::DropSchema {
+                schema: "test".to_owned(),
+                check_exists: true,
+            }
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_create_schema() -> Result<()> {
         let stmt = parse_stmt("CREATE SCHEMA test;")?;
 
         assert_eq!(
