@@ -3,10 +3,21 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use crate::datatype::DataType;
+
 #[derive(PartialEq, Debug)]
 pub enum Statement {
+    CreateTable {
+        table: String,
+        check_exists: bool,
+        columns: Vec<Column>,
+    },
     CreateSchema {
         schema: String,
+        check_exists: bool,
+    },
+    DropTable {
+        table: String,
         check_exists: bool,
     },
     DropSchema {
@@ -40,6 +51,41 @@ pub enum Statement {
         table: String,
         r#where: Option<Expression>,
     },
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Column {
+    pub name: String,
+    pub datatype: DataType,
+    pub primary_key: bool,
+    pub nullable: bool,
+    pub index: bool,
+    pub unique: bool,
+    pub references: Option<String>,
+}
+
+impl Display for Column {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.name, self.datatype)?;
+        if self.primary_key {
+            write!(f, " PRIMARY KEY")?;
+        }
+        if self.nullable {
+            write!(f, " NULL")?;
+        } else {
+            write!(f, " NOT NULL")?;
+        }
+        if self.index {
+            write!(f, " INDEX")?;
+        }
+        if self.unique {
+            write!(f, " UNIQUE")?;
+        }
+        if let Some(r) = &self.references {
+            write!(f, " REFERENCES {}", r)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -294,6 +340,31 @@ impl Display for Statement {
                 }
                 write!(f, "{}", schema)
             }
+            Statement::CreateTable {
+                table,
+                check_exists,
+                columns,
+            } => {
+                write!(f, "CREATE TABLE ")?;
+                if *check_exists {
+                    write!(f, "IF NOT EXISTS ")?;
+                }
+                write!(f, "{} (", table)?;
+                for (i, c) in columns.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", c)?;
+                }
+                write!(f, ")")
+            }
+            Statement::DropTable { table, check_exists } => {
+                write!(f, "DROP TABLE ")?;
+                if *check_exists {
+                    write!(f, "IF EXISTS ")?;
+                }
+                write!(f, "{}", table)
+            },
         }
     }
 }

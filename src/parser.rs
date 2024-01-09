@@ -42,20 +42,92 @@ impl<'a> Parser<'a> {
                     check_exists,
                 })
             }
+            TokenType::Keyword(Keyword::Table) => {
+                let check_exists = self.parse_if_exists()?;
+                let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+
+                Ok(Statement::DropTable {
+                    table,
+                    check_exists,
+                })
+            }
             _ => unimplemented!(),
         }
     }
 
     fn parse_create_statement(&mut self) -> Result<Statement> {
-        // parse create schema
-        if self
-            .next_if_token(TokenType::Keyword(Keyword::Schema))
-            .is_some()
-        {
-            return self.parse_create_schema();
+        match self.lexer.next().ok_or(Error::UnexpectedEOF)?.token_type {
+            TokenType::Keyword(Keyword::Schema) => self.parse_create_schema(),
+            TokenType::Keyword(Keyword::Table) => self.parse_create_table(),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn parse_create_table(&mut self) -> Result<Statement> {
+        let check_exists = self.parse_if_not_exists()?;
+        let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let mut columns = Vec::new();
+        // parse table columns
+        if self.next_if_token(TokenType::LParen).is_some() {
+            loop {
+                if self.next_if_token(TokenType::RParen).is_some() {
+                    break;
+                }
+
+                let name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+                let mut nullable = true;
+                let datatype = self
+                    .lexer
+                    .next()
+                    .ok_or(Error::UnexpectedEOF)
+                    .and_then(|t| t.datatype())?;
+
+                let primary_key = if self
+                    .next_if_token(TokenType::Keyword(Keyword::Primary))
+                    .is_some()
+                {
+                    self.next_if_token(TokenType::Keyword(Keyword::Key))
+                        .ok_or(Error::UnexpectedEOF)?;
+                    nullable = false;
+                    true
+                } else {
+                    false
+                };
+
+                let unique = self
+                    .next_if_token(TokenType::Keyword(Keyword::Unique))
+                    .is_some();
+
+                if self
+                    .next_if_token(TokenType::Keyword(Keyword::Not))
+                    .is_some()
+                {
+                    self.next_if_token(TokenType::Keyword(Keyword::Null))
+                        .ok_or(Error::UnexpectedEOF)?;
+                    nullable = false;
+                }
+
+                columns.push(ast::Column {
+                    name,
+                    datatype,
+                    nullable,
+                    unique,
+                    references: None,
+                    primary_key,
+                    index: false,
+                });
+
+                if self.next_if_token(TokenType::Comma).is_none() {
+                    break;
+                }
+            }
         }
 
-        todo!()
+        Ok(Statement::CreateTable {
+            table,
+            columns,
+            check_exists,
+        })
     }
 
     fn parse_create_schema(&mut self) -> Result<Statement> {
@@ -884,6 +956,7 @@ mod tests {
 
     use super::Parser;
     use crate::ast::{self, Expression, Statement};
+    use crate::datatype::DataType;
     use crate::error::Result;
 
     #[test]
@@ -899,6 +972,161 @@ mod tests {
 
         let stmt = parse_stmt("SELECT * FROM users WHERE").err().unwrap();
         assert_eq!(stmt.to_string(), "Unexpected EOF");
+    }
+
+    #[test]
+    fn test_parse_create_table() -> Result<()> {
+        let stmt = parse_stmt("CREATE TABLE t1(i INTEGER, j INTEGER);")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                table: "t1".to_owned(),
+                columns: vec![
+                    ast::Column {
+                        name: "i".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false,
+                    },
+                    ast::Column {
+                        name: "j".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false
+                    },
+                ],
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE TABLE IF NOT EXISTS t1(i INTEGER, j INTEGER);")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                table: "t1".to_owned(),
+                columns: vec![
+                    ast::Column {
+                        name: "i".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false,
+                    },
+                    ast::Column {
+                        name: "j".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false
+                    },
+                ],
+                check_exists: true,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE TABLE t1(i INTEGER PRIMARY KEY, j INTEGER);")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                table: "t1".to_owned(),
+                columns: vec![
+                    ast::Column {
+                        name: "i".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: false,
+                        unique: false,
+                        references: None,
+                        primary_key: true,
+                        index: false,
+                    },
+                    ast::Column {
+                        name: "j".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false
+                    },
+                ],
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE TABLE t1(i INTEGER UNIQUE, j INTEGER);")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                table: "t1".to_owned(),
+                columns: vec![
+                    ast::Column {
+                        name: "i".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: true,
+                        references: None,
+                        primary_key: false,
+                        index: false,
+                    },
+                    ast::Column {
+                        name: "j".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false
+                    },
+                ],
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE TABLE t1(i INTEGER NOT NULL, j INTEGER);")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                table: "t1".to_owned(),
+                columns: vec![
+                    ast::Column {
+                        name: "i".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: false,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false,
+                    },
+                    ast::Column {
+                        name: "j".to_owned(),
+                        datatype: DataType::Integer,
+                        nullable: true,
+                        unique: false,
+                        references: None,
+                        primary_key: false,
+                        index: false
+                    },
+                ],
+                check_exists: false,
+            }
+        );
+
+        Ok(())
     }
 
     #[test]

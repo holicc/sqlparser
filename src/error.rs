@@ -10,6 +10,7 @@ pub enum Error {
     UnKnownInfixOperator(String),
     UnexpectedToken(Token),
     ParseIntError(std::num::ParseIntError),
+    UnKnownDataType(String),
 }
 
 impl Display for Error {
@@ -26,6 +27,7 @@ impl Display for Error {
             }
             Error::ParseIntError(e) => write!(f, "Parse int error: {}", e),
             Error::DuplicateColumn(col) => write!(f, "Duplicate values given for column {}", col),
+            Error::UnKnownDataType(dtype) => write!(f, "Unknown datatype: {}", dtype),
         }
     }
 }

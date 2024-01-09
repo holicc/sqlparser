@@ -1,3 +1,6 @@
+use crate::datatype::DataType;
+use crate::error::{Error, Result};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Keyword {
     Select,
@@ -6,6 +9,10 @@ pub enum Keyword {
     Create,
     Drop,
     Schema,
+    Table,
+    Primary,
+    Key,
+    Unique,
     If,
     Exists,
     From,
@@ -16,6 +23,7 @@ pub enum Keyword {
     Do,
     Set,
     Not,
+    Null,
     Conflict,
     Order,
     Nothing,
@@ -41,6 +49,17 @@ pub enum Keyword {
     Right,
     Full,
     Cross,
+
+    /// data types
+    Int,
+    Integer,
+    Bool,
+    Boolean,
+    Date,
+    Datetime,
+    VarChar,
+    Timestamp,
+    Double,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -83,10 +102,23 @@ impl TokenType {
         match ident.to_lowercase().as_str() {
             "select" => TokenType::Keyword(Keyword::Select),
             "insert" => TokenType::Keyword(Keyword::Insert),
+            "int" => TokenType::Keyword(Keyword::Int),
+            "integer" => TokenType::Keyword(Keyword::Integer),
+            "bool" => TokenType::Keyword(Keyword::Bool),
+            "boolean" => TokenType::Keyword(Keyword::Boolean),
+            "date" => TokenType::Keyword(Keyword::Date),
+            "datetime" => TokenType::Keyword(Keyword::Datetime),
+            "varchar" => TokenType::Keyword(Keyword::VarChar),
+            "timestamp" => TokenType::Keyword(Keyword::Timestamp),
+            "double" => TokenType::Keyword(Keyword::Double),
+            "primary" => TokenType::Keyword(Keyword::Primary),
+            "key" => TokenType::Keyword(Keyword::Key),
+            "unique" => TokenType::Keyword(Keyword::Unique),
             "delete" => TokenType::Keyword(Keyword::Delete),
             "drop" => TokenType::Keyword(Keyword::Drop),
             "create" => TokenType::Keyword(Keyword::Create),
             "schema" => TokenType::Keyword(Keyword::Schema),
+            "table" => TokenType::Keyword(Keyword::Table),
             "if" => TokenType::Keyword(Keyword::If),
             "exists" => TokenType::Keyword(Keyword::Exists),
             "from" => TokenType::Keyword(Keyword::From),
@@ -122,6 +154,7 @@ impl TokenType {
             "right" => TokenType::Keyword(Keyword::Right),
             "full" => TokenType::Keyword(Keyword::Full),
             "cross" => TokenType::Keyword(Keyword::Cross),
+            "null" => TokenType::Keyword(Keyword::Null),
             "(" => TokenType::LParen,
             ")" => TokenType::RParen,
             "{" => TokenType::LBrace,
@@ -160,6 +193,15 @@ impl Token {
             literal,
             line,
             column: col,
+        }
+    }
+
+    pub fn datatype(&self) -> Result<DataType> {
+        match self.token_type {
+            TokenType::Keyword(Keyword::Int) | TokenType::Keyword(Keyword::Integer) => {
+                Ok(DataType::Integer)
+            }
+            _ => Err(Error::UnKnownDataType(self.literal.clone())),
         }
     }
 }
