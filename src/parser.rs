@@ -7,19 +7,20 @@ use crate::{
 use std::{collections::BTreeMap, iter::Peekable};
 
 pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>,
+    lines: Vec<&'a str>,
+    lexer: Lexer<'a>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(sql: &'a str) -> Parser<'a> {
         Parser {
-            lexer: Lexer::new(sql).peekable(),
+            lines: sql.lines().collect(),
+            lexer: Lexer::new(sql),
         }
     }
 
     pub fn parse(&mut self) -> Result<Statement> {
-        let token = self.lexer.next().ok_or(Error::UnexpectedEOF)?;
-
+        let token = self.next_token()?;
         match token.token_type {
             TokenType::Keyword(Keyword::Select) => self.parse_select_statement(),
             TokenType::Keyword(Keyword::Insert) => self.parse_insert_statement(),
@@ -32,7 +33,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_drop_statement(&mut self) -> Result<Statement> {
-        match self.lexer.next().ok_or(Error::UnexpectedEOF)?.token_type {
+        match self.next_token()?.token_type {
             TokenType::Keyword(Keyword::Schema) => {
                 let check_exists = self.parse_if_exists()?;
                 let schema = self.next_ident().ok_or(Error::UnexpectedEOF)?;
@@ -56,7 +57,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_create_statement(&mut self) -> Result<Statement> {
-        match self.lexer.next().ok_or(Error::UnexpectedEOF)?.token_type {
+        match self.next_token()?.token_type {
             TokenType::Keyword(Keyword::Schema) => self.parse_create_schema(),
             TokenType::Keyword(Keyword::Table) => self.parse_create_table(),
             _ => unimplemented!(),
@@ -713,11 +714,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression_atom(&mut self) -> Result<Expression> {
-        match self.lexer.next().ok_or(Error::UnexpectedEOF)? {
+        match self.next_token()? {
             Token {
                 token_type: TokenType::Ident,
                 mut literal,
-                ..
+                .
             } => {
                 // parse function
                 if self.next_if_token(TokenType::LParen).is_some() {
@@ -737,33 +738,33 @@ impl<'a> Parser<'a> {
             }
             Token {
                 token_type: TokenType::Asterisk,
-                ..
+                .
             } => Ok(ast::Expression::Literal(ast::Literal::String(
                 "*".to_owned(),
             ))),
             Token {
                 token_type: TokenType::Int,
                 literal,
-                ..
+                .
             } => Ok(ast::Expression::Literal(ast::Literal::Int(
                 literal.parse().map_err(|e| Error::ParseIntError(e))?,
             ))),
             Token {
                 token_type: TokenType::String,
                 literal,
-                ..
+                .
             } => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
             Token {
                 token_type: TokenType::Keyword(Keyword::True),
-                ..
+                .
             } => Ok(ast::Expression::Literal(ast::Literal::Boolean(true))),
             Token {
                 token_type: TokenType::Keyword(Keyword::False),
-                ..
+                .
             } => Ok(ast::Expression::Literal(ast::Literal::Boolean(false))),
             Token {
                 token_type: TokenType::LParen,
-                ..
+                .
             } => {
                 let expr = self.parse_expression(0)?;
                 self.next_if_token(TokenType::RParen)
@@ -771,6 +772,27 @@ impl<'a> Parser<'a> {
                 Ok(expr)
             }
             token => Err(Error::UnexpectedToken(token)),
+        }
+    }
+
+    fn next_token(&mut self) -> Result<Token> {
+        let token = self.lexer.next_token();
+        match token.token_type {
+            TokenType::EOF => {
+                let line_str = self
+                    .lines
+                    .get(token.line)
+                    .cloned()
+                    .unwrap_or("")
+                    .to_string();
+                Err(Error::UnexpectedEOF {
+                    line: token.line,
+                    column: token.column,
+                    line_str,
+                })
+            }
+            TokenType::ILLIGAL => Err(Error::UnexpectedToken(token)),
+            _ => Ok(token),
         }
     }
 

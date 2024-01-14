@@ -1,6 +1,6 @@
-pub mod token;
-pub mod lexer;
 pub mod ast;
-pub mod parser;
-pub mod error;
+pub mod lexer;
+pub mod token;
+// pub mod parser;
 pub mod datatype;
+pub mod error;

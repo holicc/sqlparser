@@ -11,19 +11,6 @@ pub struct Lexer<'a> {
     ch: char,
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let tok = self.next_token();
-        if tok.token_type == TokenType::EOF {
-            None
-        } else {
-            Some(tok)
-        }
-    }
-}
-
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let mut peekable = input.chars().peekable();
@@ -35,22 +22,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_char(&mut self) {
-        if let Some(ch) = self.peekable.next() {
-            self.ch = ch;
-        } else {
-            self.ch = EMPTY_CHAR;
-            return;
-        }
-
-        if self.ch == '\n' {
-            self.line += 1;
-        }
-
-        self.col += 1;
-    }
-
-    fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
         let literal = char::from(self.ch).to_string();
         let tok = match self.ch {
@@ -122,6 +94,21 @@ impl<'a> Lexer<'a> {
         };
         self.read_char();
         tok
+    }
+
+    fn read_char(&mut self) {
+        if let Some(ch) = self.peekable.next() {
+            self.ch = ch;
+        } else {
+            self.ch = EMPTY_CHAR;
+            return;
+        }
+
+        if self.ch == '\n' {
+            self.line += 1;
+        }
+
+        self.col += 1;
     }
 
     fn read_literal(&mut self) -> String {
