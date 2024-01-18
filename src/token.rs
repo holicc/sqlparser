@@ -1,7 +1,7 @@
 use crate::datatype::DataType;
 use crate::error::{Error, Result};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Keyword {
     Select,
     Insert,
@@ -62,7 +62,7 @@ pub enum Keyword {
     Double,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenType {
     ILLIGAL,
     EOF,
@@ -178,21 +178,26 @@ impl TokenType {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Token {
-    pub token_type: TokenType,
-    pub literal: String,
+#[derive(Debug, PartialEq, Clone)]
+pub struct Location {
+    pub line_str: String,
     pub line: usize,
     pub column: usize,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub literal: String,
+    pub location: Location,
+}
+
 impl Token {
-    pub fn new(token_type: TokenType, literal: String, col: usize, line: usize) -> Token {
+    pub fn new(token_type: TokenType, literal: String, location: Location) -> Token {
         Token {
             token_type,
             literal,
-            line,
-            column: col,
+            location,
         }
     }
 
@@ -201,7 +206,7 @@ impl Token {
             TokenType::Keyword(Keyword::Int) | TokenType::Keyword(Keyword::Integer) => {
                 Ok(DataType::Integer)
             }
-            _ => Err(Error::UnKnownDataType(self.literal.clone())),
+            _ => Err(Error::UnKnownDataType(self.clone())),
         }
     }
 }

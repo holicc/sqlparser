@@ -4,17 +4,15 @@ use crate::{
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
 };
-use std::{collections::BTreeMap, iter::Peekable};
+use std::collections::BTreeMap;
 
 pub struct Parser<'a> {
-    lines: Vec<&'a str>,
     lexer: Lexer<'a>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(sql: &'a str) -> Parser<'a> {
         Parser {
-            lines: sql.lines().collect(),
             lexer: Lexer::new(sql),
         }
     }
@@ -36,7 +34,7 @@ impl<'a> Parser<'a> {
         match self.next_token()?.token_type {
             TokenType::Keyword(Keyword::Schema) => {
                 let check_exists = self.parse_if_exists()?;
-                let schema = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+                let schema = self.next_ident()?;
 
                 Ok(Statement::DropSchema {
                     schema,
@@ -45,7 +43,7 @@ impl<'a> Parser<'a> {
             }
             TokenType::Keyword(Keyword::Table) => {
                 let check_exists = self.parse_if_exists()?;
-                let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+                let table = self.next_ident()?;
 
                 Ok(Statement::DropTable {
                     table,
@@ -66,7 +64,7 @@ impl<'a> Parser<'a> {
 
     fn parse_create_table(&mut self) -> Result<Statement> {
         let check_exists = self.parse_if_not_exists()?;
-        let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let table = self.next_ident()?;
         let mut columns = Vec::new();
         // parse table columns
         if self.next_if_token(TokenType::LParen).is_some() {
@@ -75,20 +73,16 @@ impl<'a> Parser<'a> {
                     break;
                 }
 
-                let name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+                let name = self.next_ident()?;
                 let mut nullable = true;
-                let datatype = self
-                    .lexer
-                    .next()
-                    .ok_or(Error::UnexpectedEOF)
-                    .and_then(|t| t.datatype())?;
+                let datatype = self.next_token().and_then(|t| t.datatype())?;
 
                 let primary_key = if self
                     .next_if_token(TokenType::Keyword(Keyword::Primary))
                     .is_some()
                 {
-                    self.next_if_token(TokenType::Keyword(Keyword::Key))
-                        .ok_or(Error::UnexpectedEOF)?;
+                    self.next_except(TokenType::Keyword(Keyword::Key))?;
+
                     nullable = false;
                     true
                 } else {
@@ -103,8 +97,8 @@ impl<'a> Parser<'a> {
                     .next_if_token(TokenType::Keyword(Keyword::Not))
                     .is_some()
                 {
-                    self.next_if_token(TokenType::Keyword(Keyword::Null))
-                        .ok_or(Error::UnexpectedEOF)?;
+                    self.next_except(TokenType::Keyword(Keyword::Null))?;
+
                     nullable = false;
                 }
 
@@ -133,7 +127,7 @@ impl<'a> Parser<'a> {
 
     fn parse_create_schema(&mut self) -> Result<Statement> {
         let check_exists: bool = self.parse_if_not_exists()?;
-        let schema = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let schema = self.next_ident()?;
 
         Ok(Statement::CreateSchema {
             schema,
@@ -142,10 +136,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_delete_statement(&mut self) -> Result<Statement> {
-        self.next_if_token(TokenType::Keyword(Keyword::From))
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::Keyword(Keyword::From))?;
 
-        let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let table = self.next_ident()?;
 
         let r#where = if self
             .next_if_token(TokenType::Keyword(Keyword::Where))
@@ -160,13 +153,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_update_statement(&mut self) -> Result<Statement> {
-        let table = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let table = self.next_ident()?;
 
         self.next_except(TokenType::Keyword(Keyword::Set))?;
 
         let mut assignments = BTreeMap::new();
         loop {
-            let column = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+            let column = self.next_ident()?;
 
             self.next_except(TokenType::Eq)?;
 
@@ -200,12 +193,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_insert_statement(&mut self) -> Result<Statement> {
-        self.next_if_token(TokenType::Keyword(Keyword::Into))
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::Keyword(Keyword::Into))?;
 
-        let table_name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let table_name = self.next_ident()?;
 
-        let alias = self.parse_alias();
+        let alias = self.parse_alias()?;
 
         let columns = if self.next_if_token(TokenType::LParen).is_some() {
             let columns = self
@@ -214,16 +206,15 @@ impl<'a> Parser<'a> {
                 .map(|v| v.0)
                 .collect::<Vec<_>>();
 
-            self.next_if_token(TokenType::RParen)
-                .ok_or(Error::UnexpectedEOF)?;
+            self.next_except(TokenType::RParen)?;
 
             Some(columns)
         } else {
             None
         };
 
-        self.next_if_token(TokenType::Keyword(Keyword::Values))
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::Keyword(Keyword::Values))?;
+
         let values = self.parse_values()?;
 
         let on_conflict = if self
@@ -344,31 +335,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_on_conflict(&mut self) -> Result<OnConflict> {
-        self.next_if_token(TokenType::Keyword(Keyword::Conflict))
-            .ok_or(Error::UnexpectedEOF)?;
-
-        self.next_if_token(TokenType::LParen)
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::Keyword(Keyword::Conflict))?;
+        self.next_except(TokenType::LParen)?;
 
         let columns = self.parse_columns()?.into_iter().map(|v| v.0).collect();
 
-        self.next_if_token(TokenType::RParen)
-            .ok_or(Error::UnexpectedEOF)?;
-
-        self.next_if_token(TokenType::Keyword(Keyword::Do))
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::RParen)?;
+        self.next_except(TokenType::Keyword(Keyword::Do))?;
 
         if self
             .next_if_token(TokenType::Keyword(Keyword::Nothing))
             .is_some()
         {
             Ok(OnConflict::DoNothing)
-        } else if self
-            .next_if_token(TokenType::Keyword(Keyword::Update))
-            .is_some()
-        {
-            self.next_if_token(TokenType::Keyword(Keyword::Set))
-                .ok_or(Error::UnexpectedEOF)?;
+        } else {
+            self.next_except(TokenType::Keyword(Keyword::Update))?;
+            self.next_except(TokenType::Keyword(Keyword::Set))?;
 
             let mut exprs = Vec::new();
             loop {
@@ -382,8 +364,6 @@ impl<'a> Parser<'a> {
                 constraints: columns,
                 values: exprs,
             })
-        } else {
-            Err(Error::UnexpectedEOF)
         }
     }
 
@@ -394,8 +374,9 @@ impl<'a> Parser<'a> {
                 continue;
             }
             let mut row = Vec::new();
-            self.next_if_token(TokenType::LParen)
-                .ok_or(Error::UnexpectedEOF)?;
+
+            self.next_except(TokenType::LParen)?;
+
             while self.next_if_token(TokenType::RParen).is_none() {
                 row.push(self.parse_expression(0)?);
                 self.next_if_token(TokenType::Comma);
@@ -436,8 +417,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_order_by(&mut self) -> Result<Vec<(Expression, Order)>> {
-        self.next_if_token(TokenType::Keyword(Keyword::By))
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::Keyword(Keyword::By))?;
 
         let mut order_fields = vec![];
         loop {
@@ -462,8 +442,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_group_by(&mut self) -> Result<Vec<Expression>> {
-        self.next_if_token(TokenType::Keyword(Keyword::By))
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::Keyword(Keyword::By))?;
 
         let mut group_by = Vec::new();
         while self.next_if_token(TokenType::Semicolon).is_none() {
@@ -485,8 +464,7 @@ impl<'a> Parser<'a> {
                 .next_if_token(TokenType::Keyword(Keyword::On))
                 .is_some()
             {
-                self.next_if_token(TokenType::LParen)
-                    .ok_or(Error::UnexpectedEOF)?;
+                self.next_except(TokenType::LParen)?;
 
                 let mut columns = Vec::new();
                 while self.next_if_token(TokenType::RParen).is_none() {
@@ -532,21 +510,14 @@ impl<'a> Parser<'a> {
     fn parse_from_statment(&mut self) -> Result<ast::From> {
         // parse subquery
         if self.next_if_token(TokenType::LParen).is_some() {
-            if self
-                .next_if_token(TokenType::Keyword(Keyword::Select))
-                .is_none()
-            {
-                return Err(Error::UnexpectedEOF);
-            }
+            self.next_except(TokenType::Keyword(Keyword::Select))?;
 
             let subquery = self.parse_select_statement()?;
-
-            self.next_if_token(TokenType::RParen)
-                .ok_or(Error::UnexpectedEOF)?;
+            self.next_except(TokenType::RParen)?;
 
             return Ok(ast::From::SubQuery {
                 query: Box::new(subquery),
-                alias: self.parse_alias(),
+                alias: self.parse_alias()?,
             });
         }
 
@@ -559,12 +530,7 @@ impl<'a> Parser<'a> {
             let on = if join_type == ast::JoinType::Cross {
                 None
             } else {
-                if self
-                    .next_if_token(TokenType::Keyword(Keyword::On))
-                    .is_none()
-                {
-                    return Err(Error::UnexpectedEOF);
-                }
+                self.next_except(TokenType::Keyword(Keyword::On))?;
                 Some(self.parse_expression(0)?)
             };
 
@@ -615,13 +581,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_table_reference(&mut self) -> Result<ast::From> {
-        let mut table_name = self.next_ident().ok_or(Error::UnexpectedEOF)?;
+        let mut table_name = self.next_ident()?;
         let mut is_table_function = false;
         let mut args = Vec::new();
 
         while let Some(preiod) = self.next_if_token(TokenType::Period) {
             table_name.push_str(&preiod.literal);
-            table_name.push_str(&self.next_ident().ok_or(Error::UnexpectedEOF)?);
+            table_name.push_str(&self.next_ident()?);
         }
 
         // parse table function
@@ -633,7 +599,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let alias = self.parse_alias();
+        let alias = self.parse_alias()?;
 
         if is_table_function {
             return Ok(ast::From::TableFunction {
@@ -649,22 +615,21 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_alias(&mut self) -> Option<String> {
+    fn parse_alias(&mut self) -> Result<Option<String>> {
         if self
             .next_if_token(TokenType::Keyword(Keyword::As))
             .is_some()
         {
-            self.next_ident()
-        } else if let Some(ident) = self.next_ident() {
-            Some(ident)
+            self.next_ident().map(Some)
+        } else if let Some(ident) = self.next_if_token(TokenType::Ident) {
+            Ok(Some(ident.literal))
         } else {
-            None
+            Ok(None)
         }
     }
 
     fn parse_in_expr(&mut self, lhs: Expression, negated: bool) -> Result<Expression> {
-        self.next_if_token(TokenType::LParen)
-            .ok_or(Error::UnexpectedEOF)?;
+        self.next_except(TokenType::LParen)?;
 
         if self
             .next_if_token(TokenType::Keyword(Keyword::Select))
@@ -714,12 +679,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression_atom(&mut self) -> Result<Expression> {
-        match self.next_token()? {
-            Token {
-                token_type: TokenType::Ident,
-                mut literal,
-                .
-            } => {
+        let token = self.next_token()?;
+        let literal = token.literal.clone();
+        match token.token_type {
+            TokenType::Ident => {
                 // parse function
                 if self.next_if_token(TokenType::LParen).is_some() {
                     let mut args = Vec::new();
@@ -729,89 +692,60 @@ impl<'a> Parser<'a> {
                     }
                     Ok(ast::Expression::Function(literal, args))
                 } else {
+                    let mut literal = literal;
                     while let Some(p) = self.next_if_token(TokenType::Period) {
                         literal.push_str(&p.literal);
-                        literal.push_str(&self.next_ident().ok_or(Error::UnexpectedEOF)?);
+                        literal.push_str(&self.next_ident()?);
                     }
                     Ok(ast::Expression::Literal(ast::Literal::String(literal)))
                 }
             }
-            Token {
-                token_type: TokenType::Asterisk,
-                .
-            } => Ok(ast::Expression::Literal(ast::Literal::String(
-                "*".to_owned(),
-            ))),
-            Token {
-                token_type: TokenType::Int,
-                literal,
-                .
-            } => Ok(ast::Expression::Literal(ast::Literal::Int(
-                literal.parse().map_err(|e| Error::ParseIntError(e))?,
-            ))),
-            Token {
-                token_type: TokenType::String,
-                literal,
-                .
-            } => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
-            Token {
-                token_type: TokenType::Keyword(Keyword::True),
-                .
-            } => Ok(ast::Expression::Literal(ast::Literal::Boolean(true))),
-            Token {
-                token_type: TokenType::Keyword(Keyword::False),
-                .
-            } => Ok(ast::Expression::Literal(ast::Literal::Boolean(false))),
-            Token {
-                token_type: TokenType::LParen,
-                .
-            } => {
+            TokenType::Asterisk => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
+            TokenType::Int => literal
+                .parse()
+                .map(|i| ast::Expression::Literal(ast::Literal::Int(i)))
+                .map_err(|e| Error::ParseIntError(e, token)),
+            TokenType::String => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
+            TokenType::Keyword(Keyword::True) => {
+                Ok(ast::Expression::Literal(ast::Literal::Boolean(true)))
+            }
+            TokenType::Keyword(Keyword::False) => {
+                Ok(ast::Expression::Literal(ast::Literal::Boolean(false)))
+            }
+            TokenType::LParen => {
                 let expr = self.parse_expression(0)?;
-                self.next_if_token(TokenType::RParen)
-                    .ok_or(Error::UnexpectedEOF)?;
+                self.next_except(TokenType::RParen)?;
                 Ok(expr)
             }
-            token => Err(Error::UnexpectedToken(token)),
+            _ => Err(Error::UnexpectedToken(token)),
         }
     }
 
     fn next_token(&mut self) -> Result<Token> {
-        let token = self.lexer.next_token();
+        let token = self.lexer.next();
         match token.token_type {
-            TokenType::EOF => {
-                let line_str = self
-                    .lines
-                    .get(token.line)
-                    .cloned()
-                    .unwrap_or("")
-                    .to_string();
-                Err(Error::UnexpectedEOF {
-                    line: token.line,
-                    column: token.column,
-                    line_str,
-                })
-            }
+            TokenType::EOF => Err(Error::UnexpectedEOF(token)),
             TokenType::ILLIGAL => Err(Error::UnexpectedToken(token)),
             _ => Ok(token),
         }
     }
 
     fn next_except(&mut self, except: TokenType) -> Result<Token> {
-        if let Some(token) = self.lexer.next() {
-            if token.token_type != except {
-                return Err(Error::UnexpectedToken(token));
-            }
+        let token = self.lexer.next();
+        if token.token_type == except {
             return Ok(token);
         }
 
-        Err(Error::UnexpectedEOF)
+        Err(Error::UnexpectedToken(token))
     }
 
-    fn next_ident(&mut self) -> Option<String> {
-        self.lexer
-            .peek()
-            .filter(|t| t.token_type == TokenType::Ident)?;
-        self.lexer.next().map(|t| t.literal)
+    fn next_ident(&mut self) -> Result<String> {
+        let token = self.lexer.next();
+        match token.token_type {
+            TokenType::Ident => Ok(token.literal),
+            TokenType::EOF => Err(Error::UnexpectedEOF(token)),
+            _ => Err(Error::UnexpectedToken(token)),
+        }
     }
 
     fn next_if_operator<O: Operator>(&mut self, precedence: u8) -> Option<O> {
@@ -819,12 +753,12 @@ impl<'a> Parser<'a> {
             .peek()
             .and_then(|t| O::from(t))
             .filter(|op| op.precedence() >= precedence)?;
-        O::from(&self.lexer.next()?)
+        O::from(&self.lexer.next())
     }
 
     fn next_if_token(&mut self, token: TokenType) -> Option<Token> {
         self.lexer.peek().filter(|t| t.token_type == token)?;
-        self.lexer.next()
+        Some(self.lexer.next())
     }
 }
 
@@ -986,14 +920,14 @@ mod tests {
         let stmt = parse_stmt("SELEC").err().unwrap();
         assert_eq!(
             stmt.to_string(),
-            "Unexpected token: 'SELEC' at line: 1, column: 5"
+            "error: unexpected token line: 0 column: 4"
         );
 
         let stmt = parse_stmt("SELECT * FROM").err().unwrap();
-        assert_eq!(stmt.to_string(), "Unexpected EOF");
+        assert_eq!(stmt.to_string(), "error: unexpected EOF line: 0 column: 12");
 
         let stmt = parse_stmt("SELECT * FROM users WHERE").err().unwrap();
-        assert_eq!(stmt.to_string(), "Unexpected EOF");
+        assert_eq!(stmt.to_string(), "error: unexpected EOF line: 0 column: 24");
     }
 
     #[test]
