@@ -693,14 +693,15 @@ impl<'a> Parser<'a> {
                     Ok(ast::Expression::Function(literal, args))
                 } else {
                     let mut literal = literal;
+                    // FIXME: try to parse table.column but should be a Identifier right?
                     while let Some(p) = self.next_if_token(TokenType::Period) {
                         literal.push_str(&p.literal);
                         literal.push_str(&self.next_ident()?);
                     }
-                    Ok(ast::Expression::Literal(ast::Literal::String(literal)))
+                    Ok(ast::Expression::Identifier(literal))
                 }
             }
-            TokenType::Asterisk => Ok(ast::Expression::Literal(ast::Literal::String(literal))),
+            TokenType::Asterisk => Ok(ast::Expression::Identifier(literal)),
             TokenType::Int => literal
                 .parse()
                 .map(|i| ast::Expression::Literal(ast::Literal::Int(i)))
@@ -1154,7 +1155,7 @@ mod tests {
             Statement::Delete {
                 table: "users".to_owned(),
                 r#where: Some(Expression::Operator(ast::Operator::Eq(
-                    Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
             }
@@ -1190,9 +1191,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("name".to_owned()))
                 )]),
                 r#where: Some(ast::Expression::Operator(ast::Operator::Eq(
-                    Box::new(ast::Expression::Literal(ast::Literal::String(
-                        "id".to_owned()
-                    ))),
+                    Box::new(ast::Expression::Identifier("id".to_owned())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                 ))),
             }
@@ -1215,9 +1214,7 @@ mod tests {
                     ),
                 ]),
                 r#where: Some(ast::Expression::Operator(ast::Operator::Eq(
-                    Box::new(ast::Expression::Literal(ast::Literal::String(
-                        "id".to_owned()
-                    ))),
+                    Box::new(ast::Expression::Identifier("id".to_owned())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                 ))),
             }
@@ -1249,8 +1246,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![vec![
                     ast::Expression::Literal(ast::Literal::Int(1)),
@@ -1269,8 +1266,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![
                     vec![
@@ -1295,8 +1292,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![
                     vec![
@@ -1321,8 +1318,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![
                     vec![
@@ -1335,13 +1332,9 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
-                        "id".to_owned()
-                    ))],
+                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
                     values: vec![ast::Expression::Operator(ast::Operator::Eq(
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "name".to_owned()
-                        ))),
+                        Box::new(ast::Expression::Identifier("name".to_owned())),
                         Box::new(ast::Expression::Literal(ast::Literal::String(
                             "name".to_owned()
                         ))),
@@ -1359,8 +1352,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![
                     vec![
@@ -1373,22 +1366,16 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
-                        "id".to_owned()
-                    ))],
+                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
                     values: vec![
                         ast::Expression::Operator(ast::Operator::Eq(
-                            Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "name".to_owned()
-                            ))),
+                            Box::new(ast::Expression::Identifier("name".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
                         ast::Expression::Operator(ast::Operator::Eq(
-                            Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "id".to_owned()
-                            ))),
+                            Box::new(ast::Expression::Identifier("id".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
                     ],
@@ -1405,8 +1392,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![
                     vec![
@@ -1419,30 +1406,21 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
-                        "id".to_owned()
-                    ))],
+                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
                     values: vec![
                         ast::Expression::Operator(ast::Operator::Eq(
-                            Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "name".to_owned()
-                            ))),
+                            Box::new(ast::Expression::Identifier("name".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
                         ast::Expression::Operator(ast::Operator::Eq(
-                            Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "id".to_owned()
-                            ))),
+                            Box::new(ast::Expression::Identifier("id".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
                     ],
                 }),
-                returning: Some(vec![(
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    None,
-                )]),
+                returning: Some(vec![(ast::Expression::Identifier("id".to_owned()), None,)]),
             }
         );
 
@@ -1454,8 +1432,8 @@ mod tests {
             ast::Statement::Insert {
                 table: (String::from("users"), None,),
                 columns: Some(vec![
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
                 ]),
                 values: vec![
                     vec![
@@ -1468,28 +1446,22 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Literal(ast::Literal::String(
-                        "id".to_owned()
-                    ))],
+                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
                     values: vec![
                         ast::Expression::Operator(ast::Operator::Eq(
-                            Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "name".to_owned()
-                            ))),
+                            Box::new(ast::Expression::Identifier("name".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
                         ast::Expression::Operator(ast::Operator::Eq(
-                            Box::new(ast::Expression::Literal(ast::Literal::String(
-                                "id".to_owned()
-                            ))),
+                            Box::new(ast::Expression::Identifier("id".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
                     ],
                 }),
                 returning: Some(vec![(
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
                     Some(String::from("user_id")),
                 )]),
             }
@@ -1507,10 +1479,7 @@ mod tests {
                 limit: None,
                 offset: None,
                 distinct: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1551,10 +1520,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("public.users"),
                     alias: Some(String::from("u")),
@@ -1574,10 +1540,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("catalog.public.users"),
                     alias: Some(String::from("u")),
@@ -1597,10 +1560,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::TableFunction {
                     name: String::from("catalog.public.users"),
                     args: vec![
@@ -1628,10 +1588,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::SubQuery {
                     query: Box::new(ast::Statement::Select {
                         order_by: None,
@@ -1639,10 +1596,7 @@ mod tests {
                         offset: None,
                         having: None,
                         distinct: None,
-                        columns: vec![(
-                            ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                            None,
-                        )],
+                        columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                         from: Some(ast::From::Table {
                             name: String::from("users"),
                             alias: None,
@@ -1667,10 +1621,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Inner,
                     left: Box::new(ast::From::Table {
@@ -1682,12 +1633,8 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::Operator(ast::Operator::Eq(
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u.id".to_owned()
-                        ))),
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u2.id".to_owned()
-                        ))),
+                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
+                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
                 }),
                 r#where: None,
@@ -1705,10 +1652,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Left,
                     left: Box::new(ast::From::Table {
@@ -1720,12 +1664,8 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::Operator(ast::Operator::Eq(
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u.id".to_owned()
-                        ))),
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u2.id".to_owned()
-                        ))),
+                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
+                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
                 }),
                 r#where: None,
@@ -1744,10 +1684,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Right,
                     left: Box::new(ast::From::Table {
@@ -1759,12 +1696,8 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::Operator(ast::Operator::Eq(
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u.id".to_owned()
-                        ))),
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u2.id".to_owned()
-                        ))),
+                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
+                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
                 }),
                 r#where: None,
@@ -1782,10 +1715,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Full,
                     left: Box::new(ast::From::Table {
@@ -1797,12 +1727,8 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::Operator(ast::Operator::Eq(
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u.id".to_owned()
-                        ))),
-                        Box::new(ast::Expression::Literal(ast::Literal::String(
-                            "u2.id".to_owned()
-                        ))),
+                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
+                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
                 }),
                 r#where: None,
@@ -1820,10 +1746,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Cross,
                     left: Box::new(ast::From::Table {
@@ -1850,17 +1773,14 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 order_by: Some(vec![(
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
                     ast::Order::Asc,
                 )]),
                 limit: None,
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1876,17 +1796,14 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 order_by: Some(vec![(
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
                     ast::Order::Asc,
                 )]),
                 limit: None,
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1903,15 +1820,15 @@ mod tests {
             ast::Statement::Select {
                 order_by: Some(vec![
                     (
-                        ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                        ast::Expression::Identifier("id".to_owned()),
                         ast::Order::Asc,
                     ),
                     (
-                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                        ast::Expression::Identifier("name".to_owned()),
                         ast::Order::Asc,
                     ),
                     (
-                        ast::Expression::Literal(ast::Literal::String("age".to_owned())),
+                        ast::Expression::Identifier("age".to_owned()),
                         ast::Order::Asc,
                     ),
                 ]),
@@ -1919,10 +1836,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1938,17 +1852,14 @@ mod tests {
             stmt,
             ast::Statement::Select {
                 order_by: Some(vec![(
-                    ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                    ast::Expression::Identifier("id".to_owned()),
                     ast::Order::Desc,
                 )]),
                 limit: None,
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1965,11 +1876,11 @@ mod tests {
             ast::Statement::Select {
                 order_by: Some(vec![
                     (
-                        ast::Expression::Literal(ast::Literal::String("id".to_owned())),
+                        ast::Expression::Identifier("id".to_owned()),
                         ast::Order::Desc,
                     ),
                     (
-                        ast::Expression::Literal(ast::Literal::String("name".to_owned())),
+                        ast::Expression::Identifier("name".to_owned()),
                         ast::Order::Asc,
                     ),
                 ]),
@@ -1977,10 +1888,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2003,10 +1911,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2026,10 +1931,7 @@ mod tests {
                 offset: Some(ast::Expression::Literal(ast::Literal::Int(10))),
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2052,10 +1954,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: Some(ast::Distinct::ALL),
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2075,13 +1974,10 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: Some(ast::Distinct::DISTINCT(vec![
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned())),
-                    ast::Expression::Literal(ast::Literal::String("age".to_owned())),
+                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("age".to_owned()),
                 ])),
-                columns: vec![(
-                    ast::Expression::Literal(ast::Literal::String("school".to_owned())),
-                    None,
-                )],
+                columns: vec![(ast::Expression::Identifier("school".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2103,16 +1999,13 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::Operator(ast::Operator::Eq(
-                    Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
                 group_by: None,
@@ -2129,21 +2022,18 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::Operator(ast::Operator::And(
                     Box::new(Expression::Operator(ast::Operator::Eq(
-                        Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                        Box::new(Expression::Identifier("id".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
                     Box::new(Expression::Operator(ast::Operator::Eq(
-                        Box::new(Expression::Literal(ast::Literal::String("name".to_owned()))),
+                        Box::new(Expression::Identifier("name".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
                     ))),
                 ))),
@@ -2161,21 +2051,18 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::Operator(ast::Operator::Or(
                     Box::new(Expression::Operator(ast::Operator::Eq(
-                        Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                        Box::new(Expression::Identifier("id".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
                     Box::new(Expression::Operator(ast::Operator::Eq(
-                        Box::new(Expression::Literal(ast::Literal::String("name".to_owned()))),
+                        Box::new(Expression::Identifier("name".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
                     ))),
                 ))),
@@ -2193,16 +2080,13 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
                         Expression::Literal(ast::Literal::Int(1)),
                         Expression::Literal(ast::Literal::Int(2)),
@@ -2224,16 +2108,13 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
                         Expression::Literal(ast::Literal::Int(1)),
                         Expression::Literal(ast::Literal::Int(2)),
@@ -2255,16 +2136,13 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
                         Expression::Literal(ast::Literal::String("1".to_owned())),
                         Expression::Literal(ast::Literal::String("2".to_owned())),
@@ -2285,16 +2163,13 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
                         Expression::Literal(ast::Literal::String("1".to_owned())),
                         Expression::Literal(ast::Literal::String("2".to_owned())),
@@ -2315,26 +2190,20 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
                 }),
                 r#where: Some(Expression::InSubQuery {
-                    field: Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    field: Box::new(Expression::Identifier("id".to_owned())),
                     query: Box::new(ast::Statement::Select {
                         order_by: None,
                         limit: None,
                         offset: None,
                         having: None,
                         distinct: None,
-                        columns: vec![(
-                            Expression::Literal(ast::Literal::String("id".to_owned())),
-                            None,
-                        )],
+                        columns: vec![(Expression::Identifier("id".to_owned()), None,)],
                         from: Some(ast::From::Table {
                             name: String::from("users"),
                             alias: None,
@@ -2361,18 +2230,13 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
                 }),
                 r#where: None,
-                group_by: Some(vec![Expression::Literal(ast::Literal::String(
-                    "id".to_owned()
-                ))]),
+                group_by: Some(vec![Expression::Identifier("id".to_owned())]),
             }
         );
 
@@ -2386,18 +2250,15 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
                 }),
                 r#where: None,
                 group_by: Some(vec![
-                    Expression::Literal(ast::Literal::String("id".to_owned())),
-                    Expression::Literal(ast::Literal::String("name".to_owned())),
+                    Expression::Identifier("id".to_owned()),
+                    Expression::Identifier("name".to_owned()),
                 ]),
             }
         );
@@ -2411,22 +2272,19 @@ mod tests {
                 limit: None,
                 offset: None,
                 having: Some(Expression::Operator(ast::Operator::Eq(
-                    Box::new(Expression::Literal(ast::Literal::String("id".to_owned()))),
+                    Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
                 distinct: None,
-                columns: vec![(
-                    Expression::Literal(ast::Literal::String("*".to_owned())),
-                    None,
-                )],
+                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
                 from: Some(ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
                 }),
                 r#where: None,
                 group_by: Some(vec![
-                    Expression::Literal(ast::Literal::String("id".to_owned())),
-                    Expression::Literal(ast::Literal::String("name".to_owned())),
+                    Expression::Identifier("id".to_owned()),
+                    Expression::Identifier("name".to_owned()),
                 ]),
             }
         );
@@ -2436,9 +2294,40 @@ mod tests {
     fn test_parse_ident() {
         let stmt = parse_expr("foobar").unwrap();
 
+        assert_eq!(stmt, Expression::Identifier("foobar".to_owned()));
+
+        let stmt = parse_stmt("SELECT 1").unwrap();
+
         assert_eq!(
             stmt,
-            Expression::Literal(ast::Literal::String("foobar".to_owned()))
+            Statement::Select {
+                distinct: None,
+                columns: vec![(Expression::Literal(ast::Literal::Int(1)), None)],
+                from: None,
+                r#where: None,
+                group_by: None,
+                having: None,
+                order_by: None,
+                limit: None,
+                offset: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT id").unwrap();
+
+        assert_eq!(
+            stmt,
+            Statement::Select {
+                distinct: None,
+                columns: vec![(Expression::Identifier("id".to_owned()), None)],
+                from: None,
+                r#where: None,
+                group_by: None,
+                having: None,
+                order_by: None,
+                limit: None,
+                offset: None,
+            }
         );
     }
 
@@ -2597,18 +2486,18 @@ mod tests {
                 "-a * b",
                 Expression::Operator(ast::Operator::Mul(
                     Box::new(Expression::Operator(ast::Operator::Neg(Box::new(
-                        Expression::Literal(ast::Literal::String("a".to_owned())),
+                        Expression::Identifier("a".to_owned()),
                     )))),
-                    Box::new(Expression::Literal(ast::Literal::String("b".to_owned()))),
+                    Box::new(Expression::Identifier("b".to_owned())),
                 )),
             ),
             (
                 "a + b * c",
                 Expression::Operator(ast::Operator::Add(
-                    Box::new(Expression::Literal(ast::Literal::String("a".to_owned()))),
+                    Box::new(Expression::Identifier("a".to_owned())),
                     Box::new(Expression::Operator(ast::Operator::Mul(
-                        Box::new(Expression::Literal(ast::Literal::String("b".to_owned()))),
-                        Box::new(Expression::Literal(ast::Literal::String("c".to_owned()))),
+                        Box::new(Expression::Identifier("b".to_owned())),
+                        Box::new(Expression::Identifier("c".to_owned())),
                     ))),
                 )),
             ),

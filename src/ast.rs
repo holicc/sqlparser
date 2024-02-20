@@ -358,13 +358,16 @@ impl Display for Statement {
                 }
                 write!(f, ")")
             }
-            Statement::DropTable { table, check_exists } => {
+            Statement::DropTable {
+                table,
+                check_exists,
+            } => {
                 write!(f, "DROP TABLE ")?;
                 if *check_exists {
                     write!(f, "IF EXISTS ")?;
                 }
                 write!(f, "{}", table)
-            },
+            }
         }
     }
 }
@@ -467,6 +470,7 @@ pub enum JoinType {
 
 #[derive(PartialEq, Debug)]
 pub enum Expression {
+    Identifier(String),
     Literal(Literal),
     Operator(Operator),
     Function(String, Vec<Expression>),
@@ -529,6 +533,7 @@ impl Display for Expression {
                     query
                 )
             }
+            Expression::Identifier(i) => write!(f, "{}", i),
         }
     }
 }
