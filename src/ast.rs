@@ -26,7 +26,7 @@ pub enum Statement {
     },
     Select {
         distinct: Option<Distinct>,
-        columns: Vec<(Expression, Option<String>)>,
+        columns: Vec<SelectItem>,
         from: Option<From>,
         r#where: Option<Expression>,
         group_by: Option<Vec<Expression>>,
@@ -51,6 +51,29 @@ pub enum Statement {
         table: String,
         r#where: Option<Expression>,
     },
+}
+
+#[derive(PartialEq, Debug)]
+pub enum SelectItem {
+    /// expression without alias eg. `SELECT 1`
+    UnNamedExpr(Expression),
+    /// expression with alias eg. `SELECT 1 AS one`
+    ExprWithAlias(Expression, String),
+    /// `SELECT *`
+    Wildcard,
+    /// `SELECT table.*`
+    QualifiedWildcard(String),
+}
+
+impl Display for SelectItem {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectItem::UnNamedExpr(e) => write!(f, "{}", e),
+            SelectItem::ExprWithAlias(e, a) => write!(f, "{} AS {}", e, a),
+            SelectItem::Wildcard => write!(f, "*"),
+            SelectItem::QualifiedWildcard(t) => write!(f, "{}.*", t),
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -183,10 +206,7 @@ impl Display for Statement {
                     "{}",
                     columns
                         .iter()
-                        .map(|(e, a)| match a {
-                            Some(a) => format!("{} AS {}", e, a),
-                            None => e.to_string(),
-                        })
+                        .map(|a| a.to_string())
                         .collect::<Vec<String>>()
                         .join(", ")
                 )?;

@@ -1,5 +1,5 @@
 use crate::{
-    ast::{self, Expression, OnConflict, Order, Statement},
+    ast::{self, Expression, OnConflict, Order, SelectItem, Statement},
     error::{Error, Result},
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
@@ -200,11 +200,7 @@ impl<'a> Parser<'a> {
         let alias = self.parse_alias()?;
 
         let columns = if self.next_if_token(TokenType::LParen).is_some() {
-            let columns = self
-                .parse_columns()?
-                .into_iter()
-                .map(|v| v.0)
-                .collect::<Vec<_>>();
+            let columns = self.parse_columns()?;
 
             self.next_except(TokenType::RParen)?;
 
@@ -481,7 +477,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_columns(&mut self) -> Result<Vec<(ast::Expression, Option<String>)>> {
+    fn parse_columns(&mut self) -> Result<Vec<SelectItem>> {
         let mut columns = Vec::new();
 
         loop {
@@ -497,7 +493,28 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            columns.push((expr, alias));
+
+            columns.push(match expr {
+                Expression::Identifier(ident) => {
+                    if ident == "*" && alias.is_none() {
+                        SelectItem::Wildcard
+                    } else if ident.contains(".") {
+                        SelectItem::QualifiedWildcard(ident)
+                    } else if alias.is_some() {
+                        SelectItem::ExprWithAlias(expr, alias.unwrap())
+                    } else {
+                        SelectItem::UnNamedExpr(expr)
+                    }
+                }
+                Expression::Literal(_)
+                | Expression::Operator(_)
+                | Expression::Function(_, _)
+                | Expression::InSubQuery { .. } => match alias {
+                    Some(a) => SelectItem::ExprWithAlias(expr, a),
+                    None => SelectItem::UnNamedExpr(expr),
+                },
+                _ => unreachable!("column name should be a identifier"),
+            });
 
             if self.next_if_token(TokenType::Comma).is_none() {
                 break;
@@ -912,7 +929,7 @@ mod tests {
     use std::vec;
 
     use super::Parser;
-    use crate::ast::{self, Expression, Statement};
+    use crate::ast::{self, Expression, SelectItem, Statement};
     use crate::datatype::DataType;
     use crate::error::Result;
 
@@ -1479,7 +1496,7 @@ mod tests {
                 limit: None,
                 offset: None,
                 distinct: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1499,7 +1516,9 @@ mod tests {
                 limit: None,
                 offset: None,
                 distinct: None,
-                columns: vec![(ast::Expression::Literal(ast::Literal::Int(1)), None,)],
+                columns: vec![SelectItem::UnNamedExpr(ast::Expression::Literal(
+                    ast::Literal::Int(1)
+                ))],
                 from: None,
                 r#where: None,
                 group_by: None,
@@ -1520,7 +1539,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("public.users"),
                     alias: Some(String::from("u")),
@@ -1540,7 +1559,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("catalog.public.users"),
                     alias: Some(String::from("u")),
@@ -1560,7 +1579,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::TableFunction {
                     name: String::from("catalog.public.users"),
                     args: vec![
@@ -1588,7 +1607,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::SubQuery {
                     query: Box::new(ast::Statement::Select {
                         order_by: None,
@@ -1596,7 +1615,7 @@ mod tests {
                         offset: None,
                         having: None,
                         distinct: None,
-                        columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                        columns: vec![SelectItem::Wildcard],
                         from: Some(ast::From::Table {
                             name: String::from("users"),
                             alias: None,
@@ -1621,7 +1640,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Inner,
                     left: Box::new(ast::From::Table {
@@ -1652,7 +1671,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Left,
                     left: Box::new(ast::From::Table {
@@ -1684,7 +1703,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 having: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Right,
                     left: Box::new(ast::From::Table {
@@ -1715,7 +1734,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Full,
                     left: Box::new(ast::From::Table {
@@ -1746,7 +1765,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Join {
                     join_type: ast::JoinType::Cross,
                     left: Box::new(ast::From::Table {
@@ -1780,7 +1799,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1803,7 +1822,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1836,7 +1855,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1859,7 +1878,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1888,7 +1907,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1911,7 +1930,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1931,7 +1950,7 @@ mod tests {
                 offset: Some(ast::Expression::Literal(ast::Literal::Int(10))),
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1954,7 +1973,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: Some(ast::Distinct::ALL),
-                columns: vec![(ast::Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1977,7 +1996,9 @@ mod tests {
                     ast::Expression::Identifier("name".to_owned()),
                     ast::Expression::Identifier("age".to_owned()),
                 ])),
-                columns: vec![(ast::Expression::Identifier("school".to_owned()), None,)],
+                columns: vec![SelectItem::UnNamedExpr(ast::Expression::Identifier(
+                    "school".to_owned()
+                ))],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -1999,7 +2020,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2022,7 +2043,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2051,7 +2072,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2080,7 +2101,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2108,7 +2129,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2136,7 +2157,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2163,7 +2184,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2190,7 +2211,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: String::from("users"),
                     alias: None,
@@ -2203,7 +2224,9 @@ mod tests {
                         offset: None,
                         having: None,
                         distinct: None,
-                        columns: vec![(Expression::Identifier("id".to_owned()), None,)],
+                        columns: vec![SelectItem::UnNamedExpr(Expression::Identifier(
+                            "id".to_owned()
+                        ))],
                         from: Some(ast::From::Table {
                             name: String::from("users"),
                             alias: None,
@@ -2230,7 +2253,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
@@ -2250,7 +2273,7 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
@@ -2276,7 +2299,7 @@ mod tests {
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
                 distinct: None,
-                columns: vec![(Expression::Identifier("*".to_owned()), None,)],
+                columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
@@ -2302,7 +2325,9 @@ mod tests {
             stmt,
             Statement::Select {
                 distinct: None,
-                columns: vec![(Expression::Literal(ast::Literal::Int(1)), None)],
+                columns: vec![SelectItem::UnNamedExpr(Expression::Literal(
+                    ast::Literal::Int(1)
+                ))],
                 from: None,
                 r#where: None,
                 group_by: None,
@@ -2319,7 +2344,9 @@ mod tests {
             stmt,
             Statement::Select {
                 distinct: None,
-                columns: vec![(Expression::Identifier("id".to_owned()), None)],
+                columns: vec![SelectItem::UnNamedExpr(Expression::Identifier(
+                    "id".to_owned()
+                ))],
                 from: None,
                 r#where: None,
                 group_by: None,
