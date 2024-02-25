@@ -116,9 +116,15 @@ pub enum OnConflict {
     DoNothing,
     /// `ON CONFLICT (constraint) DO UPDATE SET values[expressions]`
     DoUpdate {
-        constraints: Vec<Expression>,
+        constraints: Vec<Ident>,
         values: Vec<Expression>,
     },
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Ident {
+    pub value: String,
+    pub quote_style: Option<char>,
 }
 
 #[derive(PartialEq, Debug)]

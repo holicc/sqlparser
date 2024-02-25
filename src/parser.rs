@@ -1,5 +1,5 @@
 use crate::{
-    ast::{self, Expression, OnConflict, Order, SelectItem, Statement},
+    ast::{self, Expression, Ident, OnConflict, Order, SelectItem, Statement},
     error::{Error, Result},
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
@@ -200,10 +200,10 @@ impl<'a> Parser<'a> {
         let alias = self.parse_alias()?;
 
         let columns = if self.next_if_token(TokenType::LParen).is_some() {
-            let columns = self.parse_columns()?;
-
-            self.next_except(TokenType::RParen)?;
-
+            let mut columns = vec![];
+            while self.next_if_token(TokenType::RParen).is_none() {
+                columns.push(self.parse_expression(0)?);
+            }
             Some(columns)
         } else {
             None
@@ -226,7 +226,11 @@ impl<'a> Parser<'a> {
             .next_if_token(TokenType::Keyword(Keyword::Returning))
             .is_some()
         {
-            Some(self.parse_columns()?)
+            let mut columns = vec![];
+            while self.next_if_token(TokenType::RParen).is_none() {
+                columns.push((self.parse_expression(0)?, self.parse_alias()?));
+            }
+            Some(columns)
         } else {
             None
         };
@@ -334,7 +338,7 @@ impl<'a> Parser<'a> {
         self.next_except(TokenType::Keyword(Keyword::Conflict))?;
         self.next_except(TokenType::LParen)?;
 
-        let columns = self.parse_columns()?.into_iter().map(|v| v.0).collect();
+        let columns = self.parse_columns()?;
 
         self.next_except(TokenType::RParen)?;
         self.next_except(TokenType::Keyword(Keyword::Do))?;
@@ -495,11 +499,11 @@ impl<'a> Parser<'a> {
             };
 
             columns.push(match expr {
-                Expression::Identifier(ident) => {
+                Expression::Identifier(ref ident) => {
                     if ident == "*" && alias.is_none() {
                         SelectItem::Wildcard
                     } else if ident.contains(".") {
-                        SelectItem::QualifiedWildcard(ident)
+                        SelectItem::QualifiedWildcard(ident.clone())
                     } else if alias.is_some() {
                         SelectItem::ExprWithAlias(expr, alias.unwrap())
                     } else {
@@ -737,6 +741,10 @@ impl<'a> Parser<'a> {
             }
             _ => Err(Error::UnexpectedToken(token)),
         }
+    }
+
+    fn parse_ident(&mut self) -> Result<Ident> {
+        todo!()
     }
 
     fn next_token(&mut self) -> Result<Token> {
