@@ -40,7 +40,7 @@ pub enum Statement {
         columns: Option<Vec<Expression>>,
         values: Vec<Vec<Expression>>,
         on_conflict: Option<OnConflict>,
-        returning: Option<Vec<(Expression, Option<String>)>>,
+        returning: Option<Vec<SelectItem>>,
     },
     Update {
         table: String,
@@ -125,6 +125,15 @@ pub enum OnConflict {
 pub struct Ident {
     pub value: String,
     pub quote_style: Option<char>,
+}
+
+impl Display for Ident {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.quote_style {
+            Some(q) => write!(f, "{}{}{}", q, self.value, q),
+            None => write!(f, "{}", self.value),
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -307,10 +316,7 @@ impl Display for Statement {
                         f,
                         " RETURNING {}",
                         r.iter()
-                            .map(|(e, a)| match a {
-                                Some(a) => format!("{} AS {}", e, a),
-                                None => e.to_string(),
-                            })
+                            .map(|item| item.to_string())
                             .collect::<Vec<String>>()
                             .join(", ")
                     )?;

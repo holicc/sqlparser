@@ -201,9 +201,14 @@ impl<'a> Parser<'a> {
 
         let columns = if self.next_if_token(TokenType::LParen).is_some() {
             let mut columns = vec![];
-            while self.next_if_token(TokenType::RParen).is_none() {
+            loop {
                 columns.push(self.parse_expression(0)?);
+                if self.next_if_token(TokenType::Comma).is_none() {
+                    break;
+                }
             }
+            self.next_except(TokenType::RParen)?;
+
             Some(columns)
         } else {
             None
@@ -226,11 +231,7 @@ impl<'a> Parser<'a> {
             .next_if_token(TokenType::Keyword(Keyword::Returning))
             .is_some()
         {
-            let mut columns = vec![];
-            while self.next_if_token(TokenType::RParen).is_none() {
-                columns.push((self.parse_expression(0)?, self.parse_alias()?));
-            }
-            Some(columns)
+            self.parse_columns().ok()
         } else {
             None
         };
@@ -336,10 +337,15 @@ impl<'a> Parser<'a> {
 
     fn parse_on_conflict(&mut self) -> Result<OnConflict> {
         self.next_except(TokenType::Keyword(Keyword::Conflict))?;
+
+        let mut constraints = vec![];
         self.next_except(TokenType::LParen)?;
-
-        let columns = self.parse_columns()?;
-
+        loop {
+            constraints.push(self.parse_ident()?);
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
         self.next_except(TokenType::RParen)?;
         self.next_except(TokenType::Keyword(Keyword::Do))?;
 
@@ -352,17 +358,17 @@ impl<'a> Parser<'a> {
             self.next_except(TokenType::Keyword(Keyword::Update))?;
             self.next_except(TokenType::Keyword(Keyword::Set))?;
 
-            let mut exprs = Vec::new();
+            let mut values = Vec::new();
             loop {
-                exprs.push(self.parse_expression(0)?);
+                values.push(self.parse_expression(0)?);
                 if self.next_if_token(TokenType::Comma).is_none() {
                     break;
                 }
             }
 
             Ok(OnConflict::DoUpdate {
-                constraints: columns,
-                values: exprs,
+                constraints,
+                values,
             })
         }
     }
@@ -744,7 +750,10 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_ident(&mut self) -> Result<Ident> {
-        todo!()
+        self.next_except(TokenType::Ident).map(|ident| Ident {
+            value: ident.literal,
+            quote_style: None,
+        })
     }
 
     fn next_token(&mut self) -> Result<Token> {
@@ -1357,7 +1366,10 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
+                    constraints: vec![ast::Ident {
+                        value: "id".to_owned(),
+                        quote_style: None,
+                    }],
                     values: vec![ast::Expression::Operator(ast::Operator::Eq(
                         Box::new(ast::Expression::Identifier("name".to_owned())),
                         Box::new(ast::Expression::Literal(ast::Literal::String(
@@ -1391,7 +1403,10 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
+                    constraints: vec![ast::Ident {
+                        value: "id".to_owned(),
+                        quote_style: None,
+                    }],
                     values: vec![
                         ast::Expression::Operator(ast::Operator::Eq(
                             Box::new(ast::Expression::Identifier("name".to_owned())),
@@ -1431,7 +1446,10 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
+                    constraints: vec![ast::Ident {
+                        value: "id".to_owned(),
+                        quote_style: None,
+                    }],
                     values: vec![
                         ast::Expression::Operator(ast::Operator::Eq(
                             Box::new(ast::Expression::Identifier("name".to_owned())),
@@ -1445,7 +1463,9 @@ mod tests {
                         )),
                     ],
                 }),
-                returning: Some(vec![(ast::Expression::Identifier("id".to_owned()), None,)]),
+                returning: Some(vec![
+                    (ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())))
+                ]),
             }
         );
 
@@ -1471,7 +1491,10 @@ mod tests {
                     ],
                 ],
                 on_conflict: Some(ast::OnConflict::DoUpdate {
-                    constraints: vec![ast::Expression::Identifier("id".to_owned())],
+                    constraints: vec![ast::Ident {
+                        value: "id".to_owned(),
+                        quote_style: None,
+                    }],
                     values: vec![
                         ast::Expression::Operator(ast::Operator::Eq(
                             Box::new(ast::Expression::Identifier("name".to_owned())),
@@ -1485,10 +1508,12 @@ mod tests {
                         )),
                     ],
                 }),
-                returning: Some(vec![(
-                    ast::Expression::Identifier("id".to_owned()),
-                    Some(String::from("user_id")),
-                )]),
+                returning: Some(vec![
+                    (ast::SelectItem::ExprWithAlias(
+                        ast::Expression::Identifier("id".to_owned()),
+                        String::from("user_id")
+                    ))
+                ]),
             }
         );
     }
