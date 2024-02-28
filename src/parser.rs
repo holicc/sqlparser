@@ -517,7 +517,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 Expression::Literal(_)
-                | Expression::Operator(_)
+                | Expression::BinaryOperator(_)
                 | Expression::Function(_, _)
                 | Expression::InSubQuery { .. } => match alias {
                     Some(a) => SelectItem::ExprWithAlias(expr, a),
@@ -827,9 +827,9 @@ impl Operator for PrefixOperator {
 impl PrefixOperator {
     fn build(&self, rhs: Expression) -> Expression {
         match self {
-            PrefixOperator::Plus => Expression::Operator(ast::Operator::Pos(Box::new(rhs))),
-            PrefixOperator::Minus => Expression::Operator(ast::Operator::Neg(Box::new(rhs))),
-            PrefixOperator::Not => Expression::Operator(ast::Operator::Not(Box::new(rhs))),
+            PrefixOperator::Plus => Expression::BinaryOperator(ast::BinaryOperator::Pos(Box::new(rhs))),
+            PrefixOperator::Minus => Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(rhs))),
+            PrefixOperator::Not => Expression::BinaryOperator(ast::BinaryOperator::Not(Box::new(rhs))),
         }
     }
 }
@@ -887,51 +887,51 @@ impl Operator for InfixOperator {
 impl InfixOperator {
     pub fn build(&self, lhr: Expression, rhs: Expression) -> Result<Expression> {
         match self {
-            InfixOperator::Add => Ok(Expression::Operator(ast::Operator::Add(
+            InfixOperator::Add => Ok(Expression::BinaryOperator(ast::BinaryOperator::Add(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Sub => Ok(Expression::Operator(ast::Operator::Sub(
+            InfixOperator::Sub => Ok(Expression::BinaryOperator(ast::BinaryOperator::Sub(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Mul => Ok(Expression::Operator(ast::Operator::Mul(
+            InfixOperator::Mul => Ok(Expression::BinaryOperator(ast::BinaryOperator::Mul(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Div => Ok(Expression::Operator(ast::Operator::Div(
+            InfixOperator::Div => Ok(Expression::BinaryOperator(ast::BinaryOperator::Div(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Gt => Ok(Expression::Operator(ast::Operator::Gt(
+            InfixOperator::Gt => Ok(Expression::BinaryOperator(ast::BinaryOperator::Gt(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Gte => Ok(Expression::Operator(ast::Operator::Gte(
+            InfixOperator::Gte => Ok(Expression::BinaryOperator(ast::BinaryOperator::Gte(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Lt => Ok(Expression::Operator(ast::Operator::Lt(
+            InfixOperator::Lt => Ok(Expression::BinaryOperator(ast::BinaryOperator::Lt(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Lte => Ok(Expression::Operator(ast::Operator::Lte(
+            InfixOperator::Lte => Ok(Expression::BinaryOperator(ast::BinaryOperator::Lte(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Eq => Ok(Expression::Operator(ast::Operator::Eq(
+            InfixOperator::Eq => Ok(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::NotEq => Ok(Expression::Operator(ast::Operator::NotEq(
+            InfixOperator::NotEq => Ok(Expression::BinaryOperator(ast::BinaryOperator::NotEq(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::And => Ok(Expression::Operator(ast::Operator::And(
+            InfixOperator::And => Ok(Expression::BinaryOperator(ast::BinaryOperator::And(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
-            InfixOperator::Or => Ok(Expression::Operator(ast::Operator::Or(
+            InfixOperator::Or => Ok(Expression::BinaryOperator(ast::BinaryOperator::Or(
                 Box::new(lhr),
                 Box::new(rhs),
             ))),
@@ -1188,7 +1188,7 @@ mod tests {
             stmt,
             Statement::Delete {
                 table: "users".to_owned(),
-                r#where: Some(Expression::Operator(ast::Operator::Eq(
+                r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
@@ -1224,7 +1224,7 @@ mod tests {
                     "name".to_owned(),
                     ast::Expression::Literal(ast::Literal::String("name".to_owned()))
                 )]),
-                r#where: Some(ast::Expression::Operator(ast::Operator::Eq(
+                r#where: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(ast::Expression::Identifier("id".to_owned())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                 ))),
@@ -1247,7 +1247,7 @@ mod tests {
                         ast::Expression::Literal(ast::Literal::Int(1))
                     ),
                 ]),
-                r#where: Some(ast::Expression::Operator(ast::Operator::Eq(
+                r#where: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(ast::Expression::Identifier("id".to_owned())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                 ))),
@@ -1370,7 +1370,7 @@ mod tests {
                         value: "id".to_owned(),
                         quote_style: None,
                     }],
-                    values: vec![ast::Expression::Operator(ast::Operator::Eq(
+                    values: vec![ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(ast::Expression::Identifier("name".to_owned())),
                         Box::new(ast::Expression::Literal(ast::Literal::String(
                             "name".to_owned()
@@ -1408,13 +1408,13 @@ mod tests {
                         quote_style: None,
                     }],
                     values: vec![
-                        ast::Expression::Operator(ast::Operator::Eq(
+                        ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                             Box::new(ast::Expression::Identifier("name".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
-                        ast::Expression::Operator(ast::Operator::Eq(
+                        ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                             Box::new(ast::Expression::Identifier("id".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
@@ -1451,13 +1451,13 @@ mod tests {
                         quote_style: None,
                     }],
                     values: vec![
-                        ast::Expression::Operator(ast::Operator::Eq(
+                        ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                             Box::new(ast::Expression::Identifier("name".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
-                        ast::Expression::Operator(ast::Operator::Eq(
+                        ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                             Box::new(ast::Expression::Identifier("id".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
@@ -1496,13 +1496,13 @@ mod tests {
                         quote_style: None,
                     }],
                     values: vec![
-                        ast::Expression::Operator(ast::Operator::Eq(
+                        ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                             Box::new(ast::Expression::Identifier("name".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
-                        ast::Expression::Operator(ast::Operator::Eq(
+                        ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                             Box::new(ast::Expression::Identifier("id".to_owned())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
@@ -1684,7 +1684,7 @@ mod tests {
                         name: String::from("users"),
                         alias: Some(String::from("u2")),
                     }),
-                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                    on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
@@ -1715,7 +1715,7 @@ mod tests {
                         name: String::from("users"),
                         alias: Some(String::from("u2")),
                     }),
-                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                    on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
@@ -1747,7 +1747,7 @@ mod tests {
                         name: String::from("users"),
                         alias: Some(String::from("u2")),
                     }),
-                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                    on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
@@ -1778,7 +1778,7 @@ mod tests {
                         name: String::from("users"),
                         alias: Some(String::from("u2")),
                     }),
-                    on: Some(ast::Expression::Operator(ast::Operator::Eq(
+                    on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
@@ -2058,7 +2058,7 @@ mod tests {
                     name: String::from("users"),
                     alias: None,
                 }),
-                r#where: Some(Expression::Operator(ast::Operator::Eq(
+                r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
@@ -2081,12 +2081,12 @@ mod tests {
                     name: String::from("users"),
                     alias: None,
                 }),
-                r#where: Some(Expression::Operator(ast::Operator::And(
-                    Box::new(Expression::Operator(ast::Operator::Eq(
+                r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::And(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(Expression::Identifier("id".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
-                    Box::new(Expression::Operator(ast::Operator::Eq(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(Expression::Identifier("name".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
                     ))),
@@ -2110,12 +2110,12 @@ mod tests {
                     name: String::from("users"),
                     alias: None,
                 }),
-                r#where: Some(Expression::Operator(ast::Operator::Or(
-                    Box::new(Expression::Operator(ast::Operator::Eq(
+                r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Or(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(Expression::Identifier("id".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
-                    Box::new(Expression::Operator(ast::Operator::Eq(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(Expression::Identifier("name".to_owned())),
                         Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
                     ))),
@@ -2327,7 +2327,7 @@ mod tests {
                 order_by: None,
                 limit: None,
                 offset: None,
-                having: Some(Expression::Operator(ast::Operator::Eq(
+                having: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
@@ -2449,7 +2449,7 @@ mod tests {
 
         assert_eq!(
             stmt,
-            Expression::Operator(ast::Operator::Neg(Box::new(Expression::Literal(
+            Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(Expression::Literal(
                 ast::Literal::Int(123)
             ))))
         );
@@ -2460,92 +2460,92 @@ mod tests {
         let tests = vec![
             (
                 "1 + 2",
-                Expression::Operator(ast::Operator::Add(
+                Expression::BinaryOperator(ast::BinaryOperator::Add(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(2))),
                 )),
             ),
             (
                 "1 - 2",
-                Expression::Operator(ast::Operator::Sub(
+                Expression::BinaryOperator(ast::BinaryOperator::Sub(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(2))),
                 )),
             ),
             (
                 "1 / 1",
-                Expression::Operator(ast::Operator::Div(
+                Expression::BinaryOperator(ast::BinaryOperator::Div(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 * 5",
-                Expression::Operator(ast::Operator::Mul(
+                Expression::BinaryOperator(ast::BinaryOperator::Mul(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(5))),
                 )),
             ),
             (
                 "1 = 1",
-                Expression::Operator(ast::Operator::Eq(
+                Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 != 1",
-                Expression::Operator(ast::Operator::NotEq(
+                Expression::BinaryOperator(ast::BinaryOperator::NotEq(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 > 1",
-                Expression::Operator(ast::Operator::Gt(
+                Expression::BinaryOperator(ast::BinaryOperator::Gt(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 >= 1",
-                Expression::Operator(ast::Operator::Gte(
+                Expression::BinaryOperator(ast::BinaryOperator::Gte(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 < 1",
-                Expression::Operator(ast::Operator::Lt(
+                Expression::BinaryOperator(ast::BinaryOperator::Lt(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 <= 1",
-                Expression::Operator(ast::Operator::Lte(
+                Expression::BinaryOperator(ast::BinaryOperator::Lte(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 AND 1",
-                Expression::Operator(ast::Operator::And(
+                Expression::BinaryOperator(ast::BinaryOperator::And(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "1 OR 1",
-                Expression::Operator(ast::Operator::Or(
+                Expression::BinaryOperator(ast::BinaryOperator::Or(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 )),
             ),
             (
                 "-a * b",
-                Expression::Operator(ast::Operator::Mul(
-                    Box::new(Expression::Operator(ast::Operator::Neg(Box::new(
+                Expression::BinaryOperator(ast::BinaryOperator::Mul(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(
                         Expression::Identifier("a".to_owned()),
                     )))),
                     Box::new(Expression::Identifier("b".to_owned())),
@@ -2553,9 +2553,9 @@ mod tests {
             ),
             (
                 "a + b * c",
-                Expression::Operator(ast::Operator::Add(
+                Expression::BinaryOperator(ast::BinaryOperator::Add(
                     Box::new(Expression::Identifier("a".to_owned())),
-                    Box::new(Expression::Operator(ast::Operator::Mul(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Mul(
                         Box::new(Expression::Identifier("b".to_owned())),
                         Box::new(Expression::Identifier("c".to_owned())),
                     ))),
@@ -2563,12 +2563,12 @@ mod tests {
             ),
             (
                 "5 > 1 AND 3 < 4",
-                Expression::Operator(ast::Operator::And(
-                    Box::new(Expression::Operator(ast::Operator::Gt(
+                Expression::BinaryOperator(ast::BinaryOperator::And(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Gt(
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
-                    Box::new(Expression::Operator(ast::Operator::Lt(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Lt(
                         Box::new(Expression::Literal(ast::Literal::Int(3))),
                         Box::new(Expression::Literal(ast::Literal::Int(4))),
                     ))),
@@ -2576,10 +2576,10 @@ mod tests {
             ),
             (
                 "1 + (2 + 3) + 4",
-                Expression::Operator(ast::Operator::Add(
+                Expression::BinaryOperator(ast::BinaryOperator::Add(
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
-                    Box::new(Expression::Operator(ast::Operator::Add(
-                        Box::new(Expression::Operator(ast::Operator::Add(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Add(
+                        Box::new(Expression::BinaryOperator(ast::BinaryOperator::Add(
                             Box::new(Expression::Literal(ast::Literal::Int(2))),
                             Box::new(Expression::Literal(ast::Literal::Int(3))),
                         ))),
@@ -2589,8 +2589,8 @@ mod tests {
             ),
             (
                 "(5 + 5) * 2",
-                Expression::Operator(ast::Operator::Mul(
-                    Box::new(Expression::Operator(ast::Operator::Add(
+                Expression::BinaryOperator(ast::BinaryOperator::Mul(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Add(
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                     ))),
@@ -2599,9 +2599,9 @@ mod tests {
             ),
             (
                 "2 / (5 + 5)",
-                Expression::Operator(ast::Operator::Div(
+                Expression::BinaryOperator(ast::BinaryOperator::Div(
                     Box::new(Expression::Literal(ast::Literal::Int(2))),
-                    Box::new(Expression::Operator(ast::Operator::Add(
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Add(
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                     ))),
@@ -2609,8 +2609,8 @@ mod tests {
             ),
             (
                 "-(5 + 5)",
-                Expression::Operator(ast::Operator::Neg(Box::new(Expression::Operator(
-                    ast::Operator::Add(
+                Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(Expression::BinaryOperator(
+                    ast::BinaryOperator::Add(
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                     ),

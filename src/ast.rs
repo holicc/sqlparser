@@ -504,7 +504,7 @@ pub enum JoinType {
 pub enum Expression {
     Identifier(String),
     Literal(Literal),
-    Operator(Operator),
+    BinaryOperator(BinaryOperator),
     Function(String, Vec<Expression>),
     /// `[ NOT ] IN (val1, val2, ...)`
     InList {
@@ -524,7 +524,7 @@ impl Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expression::Literal(l) => write!(f, "{}", l),
-            Expression::Operator(o) => write!(f, "{}", o),
+            Expression::BinaryOperator(o) => write!(f, "{}", o),
             Expression::Function(n, args) => {
                 write!(
                     f,
@@ -592,7 +592,7 @@ impl Display for Literal {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Operator {
+pub enum BinaryOperator {
     // Logical
     Not(Box<Expression>),
     Eq(Box<Expression>, Box<Expression>),
@@ -613,24 +613,24 @@ pub enum Operator {
     Pos(Box<Expression>),
 }
 
-impl Display for Operator {
+impl Display for BinaryOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Operator::Not(e) => write!(f, "NOT {}", e),
-            Operator::Sub(l, r) => write!(f, "{} - {}", l, r),
-            Operator::Neg(e) => write!(f, "-{}", e),
-            Operator::Pos(r) => write!(f, "+{}", r),
-            Operator::Add(l, r) => write!(f, "{} + {}", l, r),
-            Operator::Mul(l, r) => write!(f, "{} * {}", l, r),
-            Operator::Div(l, r) => write!(f, "{} / {}", l, r),
-            Operator::Eq(l, r) => write!(f, "{} = {}", l, r),
-            Operator::NotEq(l, r) => write!(f, "{} != {}", l, r),
-            Operator::And(l, r) => write!(f, "{} AND {}", l, r),
-            Operator::Or(l, r) => write!(f, "{} OR {}", l, r),
-            Operator::Gt(l, r) => write!(f, "{} > {}", l, r),
-            Operator::Gte(l, r) => write!(f, "{} >= {}", l, r),
-            Operator::Lt(l, r) => write!(f, "{} < {}", l, r),
-            Operator::Lte(l, r) => write!(f, "{} <= {}", l, r),
+            BinaryOperator::Not(e) => write!(f, "NOT {}", e),
+            BinaryOperator::Sub(l, r) => write!(f, "{} - {}", l, r),
+            BinaryOperator::Neg(e) => write!(f, "-{}", e),
+            BinaryOperator::Pos(r) => write!(f, "+{}", r),
+            BinaryOperator::Add(l, r) => write!(f, "{} + {}", l, r),
+            BinaryOperator::Mul(l, r) => write!(f, "{} * {}", l, r),
+            BinaryOperator::Div(l, r) => write!(f, "{} / {}", l, r),
+            BinaryOperator::Eq(l, r) => write!(f, "{} = {}", l, r),
+            BinaryOperator::NotEq(l, r) => write!(f, "{} != {}", l, r),
+            BinaryOperator::And(l, r) => write!(f, "{} AND {}", l, r),
+            BinaryOperator::Or(l, r) => write!(f, "{} OR {}", l, r),
+            BinaryOperator::Gt(l, r) => write!(f, "{} > {}", l, r),
+            BinaryOperator::Gte(l, r) => write!(f, "{} >= {}", l, r),
+            BinaryOperator::Lt(l, r) => write!(f, "{} < {}", l, r),
+            BinaryOperator::Lte(l, r) => write!(f, "{} <= {}", l, r),
         }
     }
 }
