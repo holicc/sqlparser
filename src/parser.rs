@@ -827,9 +827,15 @@ impl Operator for PrefixOperator {
 impl PrefixOperator {
     fn build(&self, rhs: Expression) -> Expression {
         match self {
-            PrefixOperator::Plus => Expression::BinaryOperator(ast::BinaryOperator::Pos(Box::new(rhs))),
-            PrefixOperator::Minus => Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(rhs))),
-            PrefixOperator::Not => Expression::BinaryOperator(ast::BinaryOperator::Not(Box::new(rhs))),
+            PrefixOperator::Plus => {
+                Expression::BinaryOperator(ast::BinaryOperator::Pos(Box::new(rhs)))
+            }
+            PrefixOperator::Minus => {
+                Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(rhs)))
+            }
+            PrefixOperator::Not => {
+                Expression::BinaryOperator(ast::BinaryOperator::Not(Box::new(rhs)))
+            }
         }
     }
 }
@@ -1553,6 +1559,32 @@ mod tests {
                     ast::Literal::Int(1)
                 ))],
                 from: None,
+                r#where: None,
+                group_by: None,
+                having: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_table_function() {
+        let stmt = parse_stmt("SELECT * FROM read_csv('./test.csv') as t1;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: Some(ast::From::TableFunction {
+                    name: String::from("read_csv"),
+                    args: vec![ast::Expression::Literal(ast::Literal::String(
+                        "./test.csv".to_owned()
+                    ))],
+                    alias: Some(String::from("t1")),
+                }),
                 r#where: None,
                 group_by: None,
                 having: None,
@@ -2545,9 +2577,9 @@ mod tests {
             (
                 "-a * b",
                 Expression::BinaryOperator(ast::BinaryOperator::Mul(
-                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(
-                        Expression::Identifier("a".to_owned()),
-                    )))),
+                    Box::new(Expression::BinaryOperator(ast::BinaryOperator::Neg(
+                        Box::new(Expression::Identifier("a".to_owned())),
+                    ))),
                     Box::new(Expression::Identifier("b".to_owned())),
                 )),
             ),
@@ -2609,12 +2641,12 @@ mod tests {
             ),
             (
                 "-(5 + 5)",
-                Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(Expression::BinaryOperator(
-                    ast::BinaryOperator::Add(
+                Expression::BinaryOperator(ast::BinaryOperator::Neg(Box::new(
+                    Expression::BinaryOperator(ast::BinaryOperator::Add(
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
                         Box::new(Expression::Literal(ast::Literal::Int(5))),
-                    ),
-                )))),
+                    )),
+                ))),
             ),
         ];
 
