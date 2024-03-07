@@ -1,5 +1,7 @@
 use crate::{
-    ast::{self, Expression, Ident, OnConflict, Order, SelectItem, Statement},
+    ast::{
+        self, Assignment, Expression, Ident, OnConflict, Order, SelectItem, Statement, StructField,
+    },
     error::{Error, Result},
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
@@ -621,7 +623,7 @@ impl<'a> Parser<'a> {
         if self.next_if_token(TokenType::LParen).is_some() {
             is_table_function = true;
             while self.next_if_token(TokenType::RParen).is_none() {
-                args.push(self.parse_expression(0)?);
+                args.push(self.parse_assignment()?);
                 self.next_if_token(TokenType::Comma);
             }
         }
@@ -745,6 +747,25 @@ impl<'a> Parser<'a> {
                 self.next_except(TokenType::RParen)?;
                 Ok(expr)
             }
+            TokenType::LBrace => {
+                let mut fields = vec![];
+                while self.next_if_token(TokenType::RBrace).is_none() {
+                    let name = self.parse_expression(0)?;
+                    self.next_except(TokenType::Colon)?;
+                    let value = self.parse_expression(0)?;
+                    fields.push(StructField { name, value });
+                    self.next_if_token(TokenType::Comma);
+                }
+                Ok(ast::Expression::Struct(fields))
+            }
+            TokenType::LSquareBrace => {
+                let mut list = vec![];
+                while self.next_if_token(TokenType::RSquareBrace).is_none() {
+                    list.push(self.parse_expression(0)?);
+                    self.next_if_token(TokenType::Comma);
+                }
+                Ok(ast::Expression::Array(list))
+            }
             _ => Err(Error::UnexpectedToken(token)),
         }
     }
@@ -754,6 +775,27 @@ impl<'a> Parser<'a> {
             value: ident.literal,
             quote_style: None,
         })
+    }
+
+    fn parse_assignment(&mut self) -> Result<Assignment> {
+        let token = self.next_token()?;
+        match token.token_type {
+            TokenType::String => Ok(Assignment {
+                id: None,
+                value: Expression::Literal(ast::Literal::String(token.literal)),
+            }),
+            TokenType::Ident => {
+                self.next_except(TokenType::Eq)?;
+                Ok(Assignment {
+                    id: Some(Ident {
+                        value: token.literal,
+                        quote_style: None,
+                    }),
+                    value: self.parse_expression(0)?,
+                })
+            }
+            _ => Err(Error::UnexpectedToken(token)),
+        }
     }
 
     fn next_token(&mut self) -> Result<Token> {
@@ -1568,7 +1610,7 @@ mod tests {
 
     #[test]
     fn test_parse_table_function() {
-        let stmt = parse_stmt("SELECT * FROM read_csv('./test.csv') as t1;").unwrap();
+        let stmt = parse_stmt("SELECT * FROM read_csv('./test.csv', delim = '|', header = true, columns = { 'FlightDate': 'DATE' }, force_not_null = ['FlightDate']) as t1;").unwrap();
 
         assert_eq!(
             stmt,
@@ -1580,9 +1622,51 @@ mod tests {
                 columns: vec![SelectItem::Wildcard],
                 from: Some(ast::From::TableFunction {
                     name: String::from("read_csv"),
-                    args: vec![ast::Expression::Literal(ast::Literal::String(
-                        "./test.csv".to_owned()
-                    ))],
+                    args: vec![
+                        ast::Assignment {
+                            id: None,
+                            value: ast::Expression::Literal(ast::Literal::String(
+                                "./test.csv".to_owned()
+                            )),
+                        },
+                        ast::Assignment {
+                            id: Some(ast::Ident {
+                                value: "delim".to_owned(),
+                                quote_style: None,
+                            }),
+                            value: ast::Expression::Literal(ast::Literal::String("|".to_owned())),
+                        },
+                        ast::Assignment {
+                            id: Some(ast::Ident {
+                                value: "header".to_owned(),
+                                quote_style: None,
+                            }),
+                            value: ast::Expression::Literal(ast::Literal::Boolean(true)),
+                        },
+                        ast::Assignment {
+                            id: Some(ast::Ident {
+                                value: "columns".to_owned(),
+                                quote_style: None,
+                            }),
+                            value: ast::Expression::Struct(vec![ast::StructField {
+                                name: ast::Expression::Literal(ast::Literal::String(
+                                    "FlightDate".to_owned()
+                                )),
+                                value: ast::Expression::Literal(ast::Literal::String(
+                                    "DATE".to_owned()
+                                )),
+                            }]),
+                        },
+                        ast::Assignment {
+                            id: Some(ast::Ident {
+                                value: "force_not_null".to_owned(),
+                                quote_style: None,
+                            }),
+                            value: ast::Expression::Array(vec![ast::Expression::Literal(
+                                ast::Literal::String("FlightDate".to_owned())
+                            )]),
+                        },
+                    ],
                     alias: Some(String::from("t1")),
                 }),
                 r#where: None,
@@ -1628,34 +1712,6 @@ mod tests {
                 from: Some(ast::From::Table {
                     name: String::from("catalog.public.users"),
                     alias: Some(String::from("u")),
-                }),
-                r#where: None,
-                group_by: None,
-            }
-        );
-
-        let stmt = parse_stmt("select * from catalog.public.users(1,'2',box(1));").unwrap();
-
-        assert_eq!(
-            stmt,
-            ast::Statement::Select {
-                order_by: None,
-                limit: None,
-                offset: None,
-                distinct: None,
-                having: None,
-                columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::TableFunction {
-                    name: String::from("catalog.public.users"),
-                    args: vec![
-                        ast::Expression::Literal(ast::Literal::Int(1)),
-                        ast::Expression::Literal(ast::Literal::String("2".to_owned())),
-                        ast::Expression::Function(
-                            String::from("box"),
-                            vec![ast::Expression::Literal(ast::Literal::Int(1))]
-                        ),
-                    ],
-                    alias: None,
                 }),
                 r#where: None,
                 group_by: None,
@@ -2375,6 +2431,69 @@ mod tests {
                     Expression::Identifier("name".to_owned()),
                 ]),
             }
+        );
+    }
+
+    #[test]
+    fn test_parse_struct() {
+        let stmt = parse_expr("{}").unwrap();
+
+        assert_eq!(stmt, Expression::Struct(vec![]));
+
+        let stmt = parse_expr("{ 'FlightDate' : 'Date' }").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Struct(vec![ast::StructField {
+                name: Expression::Literal(ast::Literal::String("FlightDate".to_owned())),
+                value: Expression::Literal(ast::Literal::String("Date".to_owned())),
+            }])
+        );
+
+        let stmt = parse_expr("{ 'FlightDate' : 'Date', 'FlightNumber' : 'String' }").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Struct(vec![
+                ast::StructField {
+                    name: Expression::Literal(ast::Literal::String("FlightDate".to_owned())),
+                    value: Expression::Literal(ast::Literal::String("Date".to_owned())),
+                },
+                ast::StructField {
+                    name: Expression::Literal(ast::Literal::String("FlightNumber".to_owned())),
+                    value: Expression::Literal(ast::Literal::String("String".to_owned())),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_arrya() {
+        let stmt = parse_expr("[]").unwrap();
+
+        assert_eq!(stmt, Expression::Array(vec![]));
+
+        let stmt = parse_expr("[1,2,3]").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Array(vec![
+                Expression::Literal(ast::Literal::Int(1)),
+                Expression::Literal(ast::Literal::Int(2)),
+                Expression::Literal(ast::Literal::Int(3)),
+            ])
+        );
+
+        let stmt = parse_expr("[1,2,3, 'foo']").unwrap();
+
+        assert_eq!(
+            stmt,
+            Expression::Array(vec![
+                Expression::Literal(ast::Literal::Int(1)),
+                Expression::Literal(ast::Literal::Int(2)),
+                Expression::Literal(ast::Literal::Int(3)),
+                Expression::Literal(ast::Literal::String("foo".to_owned())),
+            ])
         );
     }
 

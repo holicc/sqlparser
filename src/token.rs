@@ -78,6 +78,8 @@ pub enum TokenType {
     LParen,
     RParen,
     LBrace,
+    LSquareBrace,
+    RSquareBrace,
     RBrace,
     Asterisk,
     Slash,
@@ -91,6 +93,7 @@ pub enum TokenType {
     // Delimiters
     Comma,
     Semicolon,
+    Colon,
     Bang,
     Period,
 
@@ -159,8 +162,11 @@ impl TokenType {
             ")" => TokenType::RParen,
             "{" => TokenType::LBrace,
             "}" => TokenType::RBrace,
+            "[" => TokenType::LSquareBrace,
+            "]" => TokenType::RSquareBrace,
             "," => TokenType::Comma,
             ";" => TokenType::Semicolon,
+            ":" => TokenType::Colon,
             "+" => TokenType::Plus,
             "-" => TokenType::Minus,
             "*" => TokenType::Asterisk,

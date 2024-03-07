@@ -420,7 +420,7 @@ pub enum From {
     },
     TableFunction {
         name: String,
-        args: Vec<Expression>,
+        args: Vec<Assignment>,
         alias: Option<String>,
     },
     SubQuery {
@@ -506,6 +506,8 @@ pub enum Expression {
     Literal(Literal),
     BinaryOperator(BinaryOperator),
     Function(String, Vec<Expression>),
+    Struct(Vec<StructField>),
+    Array(Vec<Expression>),
     /// `[ NOT ] IN (val1, val2, ...)`
     InList {
         field: Box<Expression>,
@@ -566,6 +568,43 @@ impl Display for Expression {
                 )
             }
             Expression::Identifier(i) => write!(f, "{}", i),
+            Expression::Struct(s) => write!(
+                f,
+                "({})",
+                s.iter()
+                    .map(|field| format!("{} = {}", field.name, field.value))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Expression::Array(a) => write!(
+                f,
+                "[{}]",
+                a.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct StructField {
+    pub name: Expression,
+    pub value: Expression,
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Assignment {
+    pub id: Option<Ident>,
+    pub value: Expression,
+}
+
+impl Display for Assignment {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.id {
+            Some(id) => write!(f, "{} = {}", id, self.value),
+            None => write!(f, "{}", self.value),
         }
     }
 }

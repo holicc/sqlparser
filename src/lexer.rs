@@ -70,12 +70,15 @@ impl<'a> Lexer<'a> {
                 }
             }
             ';' => Token::new(TokenType::Semicolon, literal, self.location()),
+            ':' => Token::new(TokenType::Colon, literal, self.location()),
             '.' => Token::new(TokenType::Period, literal, self.location()),
             '(' => Token::new(TokenType::LParen, literal, self.location()),
             ')' => Token::new(TokenType::RParen, literal, self.location()),
             ',' => Token::new(TokenType::Comma, literal, self.location()),
             '+' => Token::new(TokenType::Plus, literal, self.location()),
             '{' => Token::new(TokenType::LBrace, literal, self.location()),
+            '[' => Token::new(TokenType::LSquareBrace, literal, self.location()),
+            ']' => Token::new(TokenType::RSquareBrace, literal, self.location()),
             '}' => Token::new(TokenType::RBrace, literal, self.location()),
             '-' => Token::new(TokenType::Minus, literal, self.location()),
             '*' => Token::new(TokenType::Asterisk, literal, self.location()),
