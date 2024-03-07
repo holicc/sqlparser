@@ -3,7 +3,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
-use crate::datatype::DataType;
+use crate::{datatype::DataType, error::Error};
 
 #[derive(PartialEq, Debug)]
 pub enum Statement {
@@ -626,6 +626,62 @@ impl Display for Literal {
             Literal::String(s) => write!(f, "{}", s),
             Literal::Boolean(b) => write!(f, "{}", b),
             Literal::Null => write!(f, "null"),
+        }
+    }
+}
+
+impl TryInto<i64> for Literal {
+    type Error = Error;
+
+    fn try_into(self) -> Result<i64, Self::Error> {
+        match self {
+            Literal::Int(i) => Ok(i),
+            _ => Err(Error::ParserError(format!(
+                "{} cannot be converted to i64",
+                self.to_string()
+            ))),
+        }
+    }
+}
+
+impl TryInto<f64> for Literal {
+    type Error = Error;
+
+    fn try_into(self) -> Result<f64, Self::Error> {
+        match self {
+            Literal::Float(f) => Ok(f),
+            _ => Err(Error::ParserError(format!(
+                "{} cannot be converted to f64",
+                self.to_string()
+            ))),
+        }
+    }
+}
+
+impl TryInto<String> for Literal {
+    type Error = Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        match self {
+            Literal::String(s) => Ok(s),
+            _ => Err(Error::ParserError(format!(
+                "{} cannot be converted to String",
+                self.to_string()
+            ))),
+        }
+    }
+}
+
+impl TryInto<bool> for Literal {
+    type Error = Error;
+
+    fn try_into(self) -> Result<bool, Self::Error> {
+        match self {
+            Literal::Boolean(b) => Ok(b),
+            _ => Err(Error::ParserError(format!(
+                "{} cannot be converted to bool",
+                self.to_string()
+            ))),
         }
     }
 }

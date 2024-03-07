@@ -6,6 +6,7 @@ macro_rules! generate_error_enum {
             ParseIntError(std::num::ParseIntError,crate::token::Token),
             DuplicateColumn(String),
             UnKnownInfixOperator(String),
+            ParserError(String),
         }
 
         impl std::fmt::Display for Error {
@@ -22,6 +23,9 @@ macro_rules! generate_error_enum {
                     }
                     Error::UnKnownInfixOperator(operator) => {
                         write!(f, "error: unknown infix operator: {}", operator)
+                    }
+                    Error::ParserError(msg) => {
+                        write!(f, "error: {}", msg)
                     }
                 }
             }
