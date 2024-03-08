@@ -510,7 +510,7 @@ impl<'a> Parser<'a> {
                 Expression::Identifier(ref ident) => {
                     if ident == "*" && alias.is_none() {
                         SelectItem::Wildcard
-                    } else if ident.contains(".") {
+                    } else if ident.contains(".") && ident.ends_with('*') {
                         SelectItem::QualifiedWildcard(ident.clone())
                     } else if alias.is_some() {
                         SelectItem::ExprWithAlias(expr, alias.unwrap())
@@ -1601,6 +1601,29 @@ mod tests {
                     ast::Literal::Int(1)
                 ))],
                 from: None,
+                r#where: None,
+                group_by: None,
+                having: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT id,t.id FROM test as t;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
+                distinct: None,
+                columns: vec![
+                    SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())),
+                    SelectItem::UnNamedExpr(ast::Expression::Identifier("t.id".to_owned())),
+                ],
+                from: Some(ast::From::Table {
+                    name: String::from("test"),
+                    alias: Some(String::from("t")),
+                }),
                 r#where: None,
                 group_by: None,
                 having: None,
