@@ -62,7 +62,7 @@ pub enum SelectItem {
     /// `SELECT *`
     Wildcard,
     /// `SELECT table.*`
-    QualifiedWildcard(String),
+    QualifiedWildcard(Vec<String>),
 }
 
 impl Display for SelectItem {
@@ -71,7 +71,7 @@ impl Display for SelectItem {
             SelectItem::UnNamedExpr(e) => write!(f, "{}", e),
             SelectItem::ExprWithAlias(e, a) => write!(f, "{} AS {}", e, a),
             SelectItem::Wildcard => write!(f, "*"),
-            SelectItem::QualifiedWildcard(t) => write!(f, "{}.*", t),
+            SelectItem::QualifiedWildcard(t) => write!(f, "{}.*", t.join(".")),
         }
     }
 }

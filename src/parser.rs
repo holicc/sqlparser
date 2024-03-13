@@ -505,13 +505,17 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-
             columns.push(match expr {
                 Expression::Identifier(ref ident) => {
                     if ident == "*" && alias.is_none() {
                         SelectItem::Wildcard
                     } else if ident.contains(".") && ident.ends_with('*') {
-                        SelectItem::QualifiedWildcard(ident.clone())
+                        SelectItem::QualifiedWildcard(
+                            ident
+                                .split('.')
+                                .filter_map(|s| if s == "*" { None } else { Some(s.to_owned()) })
+                                .collect(),
+                        )
                     } else if alias.is_some() {
                         SelectItem::ExprWithAlias(expr, alias.unwrap())
                     } else {
@@ -819,7 +823,7 @@ impl<'a> Parser<'a> {
     fn next_ident(&mut self) -> Result<String> {
         let token = self.lexer.next();
         match token.token_type {
-            TokenType::Ident => Ok(token.literal),
+            TokenType::Asterisk | TokenType::Ident => Ok(token.literal),
             TokenType::EOF => Err(Error::UnexpectedEOF(token)),
             _ => Err(Error::UnexpectedToken(token)),
         }
@@ -1622,6 +1626,26 @@ mod tests {
                 ],
                 from: Some(ast::From::Table {
                     name: String::from("test"),
+                    alias: Some(String::from("t")),
+                }),
+                r#where: None,
+                group_by: None,
+                having: None,
+            }
+        );
+
+        let stmt = parse_stmt("SELECT t.* FROM person as t").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
+                distinct: None,
+                columns: vec![SelectItem::QualifiedWildcard(vec!["t".to_owned()])],
+                from: Some(ast::From::Table {
+                    name: String::from("person"),
                     alias: Some(String::from("t")),
                 }),
                 r#where: None,
