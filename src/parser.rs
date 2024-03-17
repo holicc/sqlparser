@@ -540,7 +540,7 @@ impl<'a> Parser<'a> {
         Ok(columns)
     }
 
-    fn parse_from_statment(&mut self) -> Result<ast::From> {
+    fn parse_from_statment(&mut self) -> Result<Vec<ast::From>> {
         // parse subquery
         if self.next_if_token(TokenType::LParen).is_some() {
             self.next_except(TokenType::Keyword(Keyword::Select))?;
@@ -548,18 +548,26 @@ impl<'a> Parser<'a> {
             let subquery = self.parse_select_statement()?;
             self.next_except(TokenType::RParen)?;
 
-            return Ok(ast::From::SubQuery {
+            return Ok(vec![ast::From::SubQuery {
                 query: Box::new(subquery),
                 alias: self.parse_alias()?,
-            });
+            }]);
         }
 
         // parse table refereneces
-        let table_ref = self.parse_table_reference()?;
+        let mut table_ref = vec![];
+
+        loop {
+            table_ref.push(self.parse_table_reference()?);
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
 
         // parse join cause
+        // TODO handle multiple join
         if let Some(join_type) = self.parse_join_type()? {
-            let right = self.parse_from_statment()?;
+            let mut right = self.parse_from_statment()?;
             let on = if join_type == ast::JoinType::Cross {
                 None
             } else {
@@ -567,12 +575,12 @@ impl<'a> Parser<'a> {
                 Some(self.parse_expression(0)?)
             };
 
-            return Ok(ast::From::Join {
+            return Ok(vec![ast::From::Join {
                 join_type,
-                left: Box::new(table_ref),
-                right: Box::new(right),
+                left: Box::new(table_ref.remove(0)),
+                right: Box::new(right.remove(0)),
                 on,
-            });
+            }]);
         }
 
         Ok(table_ref)
@@ -1582,10 +1590,10 @@ mod tests {
                 offset: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
                 having: None,
@@ -1624,10 +1632,10 @@ mod tests {
                     SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())),
                     SelectItem::UnNamedExpr(ast::Expression::Identifier("t.id".to_owned())),
                 ],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("test"),
                     alias: Some(String::from("t")),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
                 having: None,
@@ -1644,10 +1652,10 @@ mod tests {
                 offset: None,
                 distinct: None,
                 columns: vec![SelectItem::QualifiedWildcard(vec!["t".to_owned()])],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("person"),
                     alias: Some(String::from("t")),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
                 having: None,
@@ -1667,7 +1675,7 @@ mod tests {
                 offset: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::TableFunction {
+                from: Some(vec![ast::From::TableFunction {
                     name: String::from("read_csv"),
                     args: vec![
                         ast::Assignment {
@@ -1715,7 +1723,7 @@ mod tests {
                         },
                     ],
                     alias: Some(String::from("t1")),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
                 having: None,
@@ -1736,10 +1744,10 @@ mod tests {
                 distinct: None,
                 having: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("public.users"),
                     alias: Some(String::from("u")),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1756,10 +1764,10 @@ mod tests {
                 distinct: None,
                 having: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("catalog.public.users"),
                     alias: Some(String::from("u")),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1776,7 +1784,7 @@ mod tests {
                 distinct: None,
                 having: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::SubQuery {
+                from: Some(vec![ast::From::SubQuery {
                     query: Box::new(ast::Statement::Select {
                         order_by: None,
                         limit: None,
@@ -1784,15 +1792,15 @@ mod tests {
                         having: None,
                         distinct: None,
                         columns: vec![SelectItem::Wildcard],
-                        from: Some(ast::From::Table {
+                        from: Some(vec![ast::From::Table {
                             name: String::from("users"),
                             alias: None,
-                        }),
+                        }]),
                         r#where: None,
                         group_by: None,
                     }),
                     alias: Some(String::from("u")),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1809,7 +1817,7 @@ mod tests {
                 distinct: None,
                 having: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Join {
+                from: Some(vec![ast::From::Join {
                     join_type: ast::JoinType::Inner,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -1823,7 +1831,7 @@ mod tests {
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1840,7 +1848,7 @@ mod tests {
                 distinct: None,
                 having: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Join {
+                from: Some(vec![ast::From::Join {
                     join_type: ast::JoinType::Left,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -1854,7 +1862,7 @@ mod tests {
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1872,7 +1880,7 @@ mod tests {
                 distinct: None,
                 having: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Join {
+                from: Some(vec![ast::From::Join {
                     join_type: ast::JoinType::Right,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -1886,7 +1894,7 @@ mod tests {
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1903,7 +1911,7 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Join {
+                from: Some(vec![ast::From::Join {
                     join_type: ast::JoinType::Full,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -1917,7 +1925,7 @@ mod tests {
                         Box::new(ast::Expression::Identifier("u.id".to_owned())),
                         Box::new(ast::Expression::Identifier("u2.id".to_owned())),
                     ))),
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1934,7 +1942,7 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Join {
+                from: Some(vec![ast::From::Join {
                     join_type: ast::JoinType::Cross,
                     left: Box::new(ast::From::Table {
                         name: String::from("users"),
@@ -1945,7 +1953,33 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: None,
-                }),
+                }]),
+                r#where: None,
+                group_by: None,
+            }
+        );
+
+        let stmt = parse_stmt("select * from users u, persons p").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select {
+                order_by: None,
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: Some(vec![
+                    ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    },
+                    ast::From::Table {
+                        name: String::from("persons"),
+                        alias: Some(String::from("p")),
+                    },
+                ]),
                 r#where: None,
                 group_by: None,
             }
@@ -1968,10 +2002,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -1991,10 +2025,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2024,10 +2058,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2047,10 +2081,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2076,10 +2110,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2099,10 +2133,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2119,10 +2153,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2142,10 +2176,10 @@ mod tests {
                 having: None,
                 distinct: Some(ast::Distinct::ALL),
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2167,10 +2201,10 @@ mod tests {
                 columns: vec![SelectItem::UnNamedExpr(ast::Expression::Identifier(
                     "school".to_owned()
                 ))],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: None,
             }
@@ -2189,10 +2223,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(Expression::Identifier("id".to_owned())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
@@ -2212,10 +2246,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::And(
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(Expression::Identifier("id".to_owned())),
@@ -2241,10 +2275,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Or(
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
                         Box::new(Expression::Identifier("id".to_owned())),
@@ -2270,10 +2304,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::InList {
                     field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
@@ -2298,10 +2332,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::InList {
                     field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
@@ -2326,10 +2360,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::InList {
                     field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
@@ -2353,10 +2387,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::InList {
                     field: Box::new(Expression::Identifier("id".to_owned())),
                     list: vec![
@@ -2380,10 +2414,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: String::from("users"),
                     alias: None,
-                }),
+                }]),
                 r#where: Some(Expression::InSubQuery {
                     field: Box::new(Expression::Identifier("id".to_owned())),
                     query: Box::new(ast::Statement::Select {
@@ -2395,10 +2429,10 @@ mod tests {
                         columns: vec![SelectItem::UnNamedExpr(Expression::Identifier(
                             "id".to_owned()
                         ))],
-                        from: Some(ast::From::Table {
+                        from: Some(vec![ast::From::Table {
                             name: String::from("users"),
                             alias: None,
-                        }),
+                        }]),
                         r#where: None,
                         group_by: None,
                     }),
@@ -2422,10 +2456,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: Some(vec![Expression::Identifier("id".to_owned())]),
             }
@@ -2442,10 +2476,10 @@ mod tests {
                 having: None,
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: Some(vec![
                     Expression::Identifier("id".to_owned()),
@@ -2468,10 +2502,10 @@ mod tests {
                 ))),
                 distinct: None,
                 columns: vec![SelectItem::Wildcard],
-                from: Some(ast::From::Table {
+                from: Some(vec![ast::From::Table {
                     name: "users".to_owned(),
                     alias: None,
-                }),
+                }]),
                 r#where: None,
                 group_by: Some(vec![
                     Expression::Identifier("id".to_owned()),
