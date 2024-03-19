@@ -27,7 +27,7 @@ pub enum Statement {
     Select {
         distinct: Option<Distinct>,
         columns: Vec<SelectItem>,
-        from: Option<Vec<From>>,
+        from: Vec<From>,
         r#where: Option<Expression>,
         group_by: Option<Vec<Expression>>,
         having: Option<Expression>,
@@ -225,16 +225,14 @@ impl Display for Statement {
                         .collect::<Vec<String>>()
                         .join(", ")
                 )?;
-                if let Some(from) = from {
-                    write!(
-                        f,
-                        " FROM {}",
-                        from.iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    )?;
-                }
+                write!(
+                    f,
+                    " FROM {}",
+                    from.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?;
                 if let Some(where_) = r#where {
                     write!(f, " WHERE {}", where_)?;
                 }
