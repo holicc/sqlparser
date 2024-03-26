@@ -1,6 +1,7 @@
 use crate::{
     ast::{
-        self, Assignment, Expression, Ident, OnConflict, Order, SelectItem, Statement, StructField,
+        self, Assignment, Expression, Ident, OnConflict, Order, Select, SelectItem, Statement,
+        StructField,
     },
     error::{Error, Result},
     lexer::Lexer,
@@ -256,7 +257,8 @@ impl<'a> Parser<'a> {
             .next_if_token(TokenType::Keyword(Keyword::From))
             .is_none()
         {
-            return Ok(Statement::Select {
+            return Ok(Statement::Select(Box::new(Select {
+                with: None,
                 distinct,
                 columns,
                 from: vec![],
@@ -266,7 +268,7 @@ impl<'a> Parser<'a> {
                 order_by: None,
                 limit: None,
                 offset: None,
-            });
+            })));
         }
         let from = self.parse_from_statment()?;
 
@@ -324,7 +326,8 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(Statement::Select {
+        Ok(Statement::Select(Box::new(Select {
+            with: None,
             distinct,
             columns,
             from,
@@ -334,7 +337,7 @@ impl<'a> Parser<'a> {
             order_by,
             limit,
             offset,
-        })
+        })))
     }
 
     fn parse_on_conflict(&mut self) -> Result<OnConflict> {
@@ -1006,7 +1009,7 @@ mod tests {
     use std::vec;
 
     use super::Parser;
-    use crate::ast::{self, Expression, SelectItem, Statement};
+    use crate::ast::{self, Expression, Select, SelectItem, Statement};
     use crate::datatype::DataType;
     use crate::error::Result;
 
@@ -1584,7 +1587,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1597,14 +1601,15 @@ mod tests {
                 r#where: None,
                 group_by: None,
                 having: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT 1").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1616,14 +1621,15 @@ mod tests {
                 r#where: None,
                 group_by: None,
                 having: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT id,t.id FROM test as t;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1639,14 +1645,15 @@ mod tests {
                 r#where: None,
                 group_by: None,
                 having: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT t.* FROM person as t").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1659,7 +1666,7 @@ mod tests {
                 r#where: None,
                 group_by: None,
                 having: None,
-            }
+            }))
         );
     }
 
@@ -1669,7 +1676,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1727,7 +1735,7 @@ mod tests {
                 r#where: None,
                 group_by: None,
                 having: None,
-            }
+            }))
         );
     }
 
@@ -1737,7 +1745,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1750,14 +1759,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from catalog.public.users u;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1770,14 +1780,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from (select * from users) as u;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1785,7 +1796,8 @@ mod tests {
                 having: None,
                 columns: vec![SelectItem::Wildcard],
                 from: vec![ast::From::SubQuery {
-                    query: Box::new(ast::Statement::Select {
+                    query: Box::new(ast::Statement::Select(Box::new(Select {
+                        with: None,
                         order_by: None,
                         limit: None,
                         offset: None,
@@ -1798,19 +1810,20 @@ mod tests {
                         }],
                         r#where: None,
                         group_by: None,
-                    }),
+                    }))),
                     alias: Some(String::from("u")),
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from users u join users u2 on u.id = u2.id;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1834,14 +1847,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from users u left join users u2 on u.id = u2.id;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1865,7 +1879,7 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt =
@@ -1873,7 +1887,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1897,14 +1912,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from users u full join users u2 on u.id = u2.id;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1928,14 +1944,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from users u cross join users u2;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1956,14 +1973,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("select * from users u, persons p").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -1982,7 +2000,7 @@ mod tests {
                 ],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
     }
 
@@ -1992,7 +2010,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: Some(vec![(
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Order::Asc,
@@ -2008,14 +2027,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users ORDER BY id ASC;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: Some(vec![(
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Order::Asc,
@@ -2031,14 +2051,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users ORDER BY id,name,age;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: Some(vec![
                     (
                         ast::Expression::Identifier("id".to_owned()),
@@ -2064,14 +2085,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users ORDER BY id DESC;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: Some(vec![(
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Order::Desc,
@@ -2087,14 +2109,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users ORDER BY id DESC, name ASC;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: Some(vec![
                     (
                         ast::Expression::Identifier("id".to_owned()),
@@ -2116,7 +2139,7 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
     }
 
@@ -2126,7 +2149,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: Some(ast::Expression::Literal(ast::Literal::Int(10))),
                 offset: None,
@@ -2139,14 +2163,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users LIMIT 10 OFFSET 10;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: Some(ast::Expression::Literal(ast::Literal::Int(10))),
                 offset: Some(ast::Expression::Literal(ast::Literal::Int(10))),
@@ -2159,7 +2184,7 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
     }
 
@@ -2169,7 +2194,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2182,14 +2208,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT DISTINCT ON(name,age),school FROM users;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2207,7 +2234,7 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: None,
-            }
+            }))
         );
     }
 
@@ -2216,7 +2243,8 @@ mod tests {
         let stmt = parse_stmt("SELECT * FROM users WHERE id = 1;").unwrap();
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2232,14 +2260,15 @@ mod tests {
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id = 1 AND name = 'foo';").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2261,14 +2290,15 @@ mod tests {
                     ))),
                 ))),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id = 1 OR name = 'foo';").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2290,14 +2320,15 @@ mod tests {
                     ))),
                 ))),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id in (1,2,3)").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2318,14 +2349,15 @@ mod tests {
                     negated: false,
                 }),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id not in (1,2,3)").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2346,14 +2378,15 @@ mod tests {
                     negated: true,
                 }),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id in ('1','2')").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2373,14 +2406,15 @@ mod tests {
                     negated: false,
                 }),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id not in ('1','2')").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2400,14 +2434,15 @@ mod tests {
                     negated: true,
                 }),
                 group_by: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users WHERE id in (select id from users)").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2420,7 +2455,8 @@ mod tests {
                 }],
                 r#where: Some(Expression::InSubQuery {
                     field: Box::new(Expression::Identifier("id".to_owned())),
-                    query: Box::new(ast::Statement::Select {
+                    query: Box::new(ast::Statement::Select(Box::new(Select {
+                        with: None,
                         order_by: None,
                         limit: None,
                         offset: None,
@@ -2435,11 +2471,55 @@ mod tests {
                         }],
                         r#where: None,
                         group_by: None,
-                    }),
+                    }))),
                     negated: false,
                 }),
                 group_by: None,
-            }
+            }))
+        );
+    }
+
+    #[test]
+    fn test_with() {
+        let stmt = parse_stmt("WITH t1 AS (SELECT * FROM users) SELECT * FROM t1;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select(Box::new(Select {
+                with: Some(ast::With {
+                    recursive: false,
+                    cte_tables: vec![ast::Cte {
+                        alias: "t1".to_owned(),
+                        query: Box::new(Select {
+                            with: None,
+                            order_by: None,
+                            distinct: None,
+                            columns: vec![SelectItem::Wildcard],
+                            from: vec![ast::From::Table {
+                                name: "users".to_owned(),
+                                alias: None,
+                            }],
+                            r#where: None,
+                            group_by: None,
+                            having: None,
+                            limit: None,
+                            offset: None,
+                        }),
+                    }]
+                }),
+                order_by: None,
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: vec![ast::From::Table {
+                    name: "t1".to_owned(),
+                    alias: None,
+                }],
+                r#where: None,
+                group_by: None,
+            }))
         );
     }
 
@@ -2449,7 +2529,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2462,14 +2543,15 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: Some(vec![Expression::Identifier("id".to_owned())]),
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users GROUP BY id, name;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2485,14 +2567,15 @@ mod tests {
                     Expression::Identifier("id".to_owned()),
                     Expression::Identifier("name".to_owned()),
                 ]),
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT * FROM users GROUP BY id, name HAVING id = 1;").unwrap();
 
         assert_eq!(
             stmt,
-            ast::Statement::Select {
+            ast::Statement::Select(Box::new(Select {
+                with: None,
                 order_by: None,
                 limit: None,
                 offset: None,
@@ -2511,7 +2594,7 @@ mod tests {
                     Expression::Identifier("id".to_owned()),
                     Expression::Identifier("name".to_owned()),
                 ]),
-            }
+            }))
         );
     }
 
@@ -2588,7 +2671,8 @@ mod tests {
 
         assert_eq!(
             stmt,
-            Statement::Select {
+            Statement::Select(Box::new(Select {
+                with: None,
                 distinct: None,
                 columns: vec![SelectItem::UnNamedExpr(Expression::Literal(
                     ast::Literal::Int(1)
@@ -2600,14 +2684,15 @@ mod tests {
                 order_by: None,
                 limit: None,
                 offset: None,
-            }
+            }))
         );
 
         let stmt = parse_stmt("SELECT id").unwrap();
 
         assert_eq!(
             stmt,
-            Statement::Select {
+            Statement::Select(Box::new(Select {
+                with: None,
                 distinct: None,
                 columns: vec![SelectItem::UnNamedExpr(Expression::Identifier(
                     "id".to_owned()
@@ -2619,7 +2704,7 @@ mod tests {
                 order_by: None,
                 limit: None,
                 offset: None,
-            }
+            }))
         );
     }
 

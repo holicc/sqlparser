@@ -24,17 +24,7 @@ pub enum Statement {
         schema: String,
         check_exists: bool,
     },
-    Select {
-        distinct: Option<Distinct>,
-        columns: Vec<SelectItem>,
-        from: Vec<From>,
-        r#where: Option<Expression>,
-        group_by: Option<Vec<Expression>>,
-        having: Option<Expression>,
-        order_by: Option<Vec<(Expression, Order)>>,
-        limit: Option<Expression>,
-        offset: Option<Expression>,
-    },
+    Select(Box<Select>),
     Insert {
         table: (String, Option<String>),
         columns: Option<Vec<Expression>>,
@@ -51,6 +41,130 @@ pub enum Statement {
         table: String,
         r#where: Option<Expression>,
     },
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Select {
+    pub with: Option<With>,
+    pub distinct: Option<Distinct>,
+    pub columns: Vec<SelectItem>,
+    pub from: Vec<From>,
+    pub r#where: Option<Expression>,
+    pub group_by: Option<Vec<Expression>>,
+    pub having: Option<Expression>,
+    pub order_by: Option<Vec<(Expression, Order)>>,
+    pub limit: Option<Expression>,
+    pub offset: Option<Expression>,
+}
+
+impl Display for Select {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SELECT ")?;
+        if let Some(w) = &self.with {
+            write!(f, "WITH {}", w)?;
+        }
+        if let Some(d) = &self.distinct {
+            match d {
+                Distinct::ALL => write!(f, "ALL ")?,
+                Distinct::DISTINCT(e) => write!(
+                    f,
+                    "DISTINCT {}",
+                    e.iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )?,
+            }
+        }
+        write!(
+            f,
+            "{}",
+            self.columns
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )?;
+        if !self.from.is_empty() {
+            write!(
+                f,
+                " FROM {}",
+                self.from
+                    .iter()
+                    .map(|from| from.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )?;
+        }
+        if let Some(w) = &self.r#where {
+            write!(f, " WHERE {}", w)?;
+        }
+        if let Some(g) = &self.group_by {
+            write!(
+                f,
+                " GROUP BY {}",
+                g.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )?;
+        }
+        if let Some(h) = &self.having {
+            write!(f, " HAVING {}", h)?;
+        }
+        if let Some(o) = &self.order_by {
+            write!(
+                f,
+                " ORDER BY {}",
+                o.iter()
+                    .map(|(e, o)| format!("{} {}", e, o))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )?;
+        }
+        if let Some(l) = &self.limit {
+            write!(f, " LIMIT {}", l)?;
+        }
+        if let Some(o) = &self.offset {
+            write!(f, " OFFSET {}", o)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct With {
+    pub recursive: bool,
+    pub cte_tables: Vec<Cte>,
+}
+
+impl Display for With {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // if self.recursive {
+        //     write!(f, "RECURSIVE ")?;
+        // }
+        write!(
+            f,
+            "{}",
+            self.cte_tables
+                .iter()
+                .map(|cte| cte.to_string())
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Cte {
+    pub alias: String,
+    pub query: Box<Select>,
+}
+
+impl Display for Cte {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} AS ({})", self.alias, self.query)
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -188,91 +302,7 @@ impl Display for Order {
 impl Display for Statement {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Statement::Select {
-                distinct,
-                columns,
-                from,
-                r#where,
-                group_by,
-                having,
-                order_by,
-                limit,
-                offset,
-            } => {
-                write!(f, "SELECT ")?;
-                if let Some(d) = distinct {
-                    match d {
-                        Distinct::ALL => write!(f, "ALL ")?,
-                        Distinct::DISTINCT(e) => {
-                            write!(f, "DISTINCT ")?;
-                            write!(
-                                f,
-                                "{}",
-                                e.iter()
-                                    .map(|e| e.to_string())
-                                    .collect::<Vec<String>>()
-                                    .join(", ")
-                            )?;
-                        }
-                    }
-                }
-                write!(
-                    f,
-                    "{}",
-                    columns
-                        .iter()
-                        .map(|a| a.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )?;
-                write!(
-                    f,
-                    " FROM {}",
-                    from.iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )?;
-                if let Some(where_) = r#where {
-                    write!(f, " WHERE {}", where_)?;
-                }
-                if let Some(group_by) = group_by {
-                    write!(
-                        f,
-                        " GROUP BY {}",
-                        group_by
-                            .iter()
-                            .map(|e| e.to_string())
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    )?;
-                }
-
-                if let Some(having) = having {
-                    write!(f, " HAVING {}", having)?;
-                }
-
-                if let Some(order_by) = order_by {
-                    write!(
-                        f,
-                        " ORDER BY {}",
-                        order_by
-                            .iter()
-                            .map(|(e, o)| format!("{} {}", e, o))
-                            .collect::<Vec<String>>()
-                            .join(", ")
-                    )?;
-                }
-
-                if let Some(limit) = limit {
-                    write!(f, " LIMIT {}", limit)?;
-                }
-
-                if let Some(offset) = offset {
-                    write!(f, " OFFSET {}", offset)?;
-                }
-                Ok(())
-            }
+            Statement::Select(select) => write!(f, "{}", select),
             Statement::Insert {
                 table,
                 columns,
