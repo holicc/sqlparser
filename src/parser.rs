@@ -1,7 +1,7 @@
 use crate::{
     ast::{
-        self, Assignment, Expression, Ident, OnConflict, Order, Select, SelectItem, Statement,
-        StructField,
+        self, Assignment, Cte, Expression, Ident, OnConflict, Order, Select, SelectItem, Statement,
+        StructField, With,
     },
     error::{Error, Result},
     lexer::Lexer,
@@ -24,6 +24,7 @@ impl<'a> Parser<'a> {
         let token = self.next_token()?;
         match token.token_type {
             TokenType::Keyword(Keyword::Select) => self.parse_select_statement(),
+            TokenType::Keyword(Keyword::With) => self.parse_with_statment(),
             TokenType::Keyword(Keyword::Insert) => self.parse_insert_statement(),
             TokenType::Keyword(Keyword::Update) => self.parse_update_statement(),
             TokenType::Keyword(Keyword::Delete) => self.parse_delete_statement(),
@@ -249,6 +250,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_select_statement(&mut self) -> Result<Statement> {
+        self.parse_select().map(|s| Statement::Select(Box::new(s)))
+    }
+
+    fn parse_with_statment(&mut self) -> Result<Statement> {
+        let with = self.parse_cte_with()?;
+        let token = self.next_token()?;
+        match token.token_type {
+            TokenType::Keyword(Keyword::Select) => self.parse_select().map(|mut select| {
+                select.with = Some(with);
+                Statement::Select(Box::new(select))
+            }),
+            _ => Err(Error::UnexpectedToken(token)),
+        }
+    }
+
+    fn parse_select(&mut self) -> Result<Select> {
         let distinct = self.parse_distinct()?;
 
         let columns = self.parse_columns()?;
@@ -257,7 +274,7 @@ impl<'a> Parser<'a> {
             .next_if_token(TokenType::Keyword(Keyword::From))
             .is_none()
         {
-            return Ok(Statement::Select(Box::new(Select {
+            return Ok(Select {
                 with: None,
                 distinct,
                 columns,
@@ -268,7 +285,7 @@ impl<'a> Parser<'a> {
                 order_by: None,
                 limit: None,
                 offset: None,
-            })));
+            });
         }
         let from = self.parse_from_statment()?;
 
@@ -326,7 +343,7 @@ impl<'a> Parser<'a> {
             None
         };
 
-        Ok(Statement::Select(Box::new(Select {
+        Ok(Select {
             with: None,
             distinct,
             columns,
@@ -337,7 +354,38 @@ impl<'a> Parser<'a> {
             order_by,
             limit,
             offset,
-        })))
+        })
+    }
+
+    fn parse_cte_with(&mut self) -> Result<With> {
+        let mut ctes = vec![];
+        loop {
+            let cte_table_name = self.parse_ident()?.value;
+
+            self.next_except(TokenType::Keyword(Keyword::As))?;
+
+            self.next_except(TokenType::LParen)?;
+
+            let token = self.next_token()?;
+            match token.token_type {
+                TokenType::Keyword(Keyword::Select) => ctes.push(Cte {
+                    alias: cte_table_name,
+                    query: Box::new(self.parse_select()?),
+                }),
+                _ => return Err(Error::UnexpectedToken(token)),
+            }
+
+            self.next_except(TokenType::RParen)?;
+
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
+
+        Ok(With {
+            recursive: false,
+            cte_tables: ctes,
+        })
     }
 
     fn parse_on_conflict(&mut self) -> Result<OnConflict> {
@@ -2517,6 +2565,81 @@ mod tests {
                     name: "t1".to_owned(),
                     alias: None,
                 }],
+                r#where: None,
+                group_by: None,
+            }))
+        );
+
+        let stmt = parse_stmt(r#"
+        WITH t1 AS (
+            SELECT * FROM users
+        ),
+        t2 AS (
+            SELECT * FROM pepole
+        )
+        SELECT * FROM t1,t2;
+        "#).unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select(Box::new(Select {
+                with: Some(ast::With {
+                    recursive: false,
+                    cte_tables: vec![
+                        ast::Cte {
+                            alias: "t1".to_owned(),
+                            query: Box::new(Select {
+                                with: None,
+                                order_by: None,
+                                distinct: None,
+                                columns: vec![SelectItem::Wildcard],
+                                from: vec![ast::From::Table {
+                                    name: "users".to_owned(),
+                                    alias: None,
+                                }],
+                                r#where: None,
+                                group_by: None,
+                                having: None,
+                                limit: None,
+                                offset: None,
+                            }),
+                        },
+                        ast::Cte {
+                            alias: "t2".to_owned(),
+                            query: Box::new(Select {
+                                with: None,
+                                order_by: None,
+                                distinct: None,
+                                columns: vec![SelectItem::Wildcard],
+                                from: vec![ast::From::Table {
+                                    name: "pepole".to_owned(),
+                                    alias: None,
+                                }],
+                                r#where: None,
+                                group_by: None,
+                                having: None,
+                                limit: None,
+                                offset: None,
+                            }),
+                        },
+                    ]
+                }),
+                order_by: None,
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: vec![
+                    ast::From::Table {
+                        name: "t1".to_owned(),
+                        alias: None,
+                    },
+                    ast::From::Table {
+                        name: "t2".to_owned(),
+                        alias: None,
+                    },
+                ],
                 r#where: None,
                 group_by: None,
             }))
