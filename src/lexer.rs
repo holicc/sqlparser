@@ -116,7 +116,7 @@ impl<'a> Lexer<'a> {
         tok
     }
 
-    fn location(&self) -> Location {
+    pub fn location(&self) -> Location {
         let line_str = self.lines.get(self.cur_line).cloned().unwrap_or_default();
         Location {
             line_str: line_str.to_owned(),

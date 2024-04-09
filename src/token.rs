@@ -186,7 +186,7 @@ impl TokenType {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct Location {
     pub line_str: String,
     pub line: usize,

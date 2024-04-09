@@ -638,38 +638,25 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_join_type(&mut self) -> Result<Option<ast::JoinType>> {
-        if self
-            .next_if_token(TokenType::Keyword(Keyword::Join))
-            .is_some()
-        {
-            Ok(Some(ast::JoinType::Inner))
-        } else if self
-            .next_if_token(TokenType::Keyword(Keyword::Left))
-            .is_some()
-        {
-            self.next_if_token(TokenType::Keyword(Keyword::Join));
-            Ok(Some(ast::JoinType::Left))
-        } else if self
-            .next_if_token(TokenType::Keyword(Keyword::Right))
-            .is_some()
-        {
-            self.next_if_token(TokenType::Keyword(Keyword::Join));
-            Ok(Some(ast::JoinType::Right))
-        } else if self
-            .next_if_token(TokenType::Keyword(Keyword::Full))
-            .is_some()
-        {
-            self.next_if_token(TokenType::Keyword(Keyword::Join));
-            Ok(Some(ast::JoinType::Full))
-        } else if self
-            .next_if_token(TokenType::Keyword(Keyword::Cross))
-            .is_some()
-        {
-            self.next_if_token(TokenType::Keyword(Keyword::Join));
-            Ok(Some(ast::JoinType::Cross))
-        } else {
-            Ok(None)
+        let token = self.peek()?;
+        let join_type = match token.token_type {
+            TokenType::Keyword(Keyword::Left) => ast::JoinType::Left,
+            TokenType::Keyword(Keyword::Right) => ast::JoinType::Right,
+            TokenType::Keyword(Keyword::Full) => ast::JoinType::Full,
+            TokenType::Keyword(Keyword::Cross) => ast::JoinType::Cross,
+            TokenType::Keyword(Keyword::Inner) | TokenType::Keyword(Keyword::Join) => {
+                ast::JoinType::Inner
+            }
+            _ => return Ok(None),
+        };
+        // consumer keyword token,such as: left \ right \ full \ cross \ inner
+        if token.token_type != TokenType::Keyword(Keyword::Join) {
+            self.lexer.next();
         }
+        // consumer next keyword token 'join'
+        self.next_except(TokenType::Keyword(Keyword::Join))?;
+
+        Ok(Some(join_type))
     }
 
     fn parse_table_reference(&mut self) -> Result<ast::From> {
@@ -899,6 +886,15 @@ impl<'a> Parser<'a> {
     fn next_if_token(&mut self, token: TokenType) -> Option<Token> {
         self.lexer.peek().filter(|t| t.token_type == token)?;
         Some(self.lexer.next())
+    }
+
+    fn peek(&mut self) -> Result<&Token> {
+        let localtion = self.lexer.location();
+        self.lexer.peek().ok_or(Error::UnexpectedEOF(Token {
+            token_type: TokenType::EOF,
+            literal: "".to_owned(),
+            location: localtion,
+        }))
     }
 }
 
@@ -1963,6 +1959,39 @@ mod tests {
             }))
         );
 
+        let stmt =
+            parse_stmt("select * from users u inner join users u2 on u.id = u2.id;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select(Box::new(Select {
+                with: None,
+                order_by: None,
+                limit: None,
+                offset: None,
+                having: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: vec![ast::From::Join {
+                    join_type: ast::JoinType::Inner,
+                    left: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u")),
+                    }),
+                    right: Box::new(ast::From::Table {
+                        name: String::from("users"),
+                        alias: Some(String::from("u2")),
+                    }),
+                    on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
+                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
+                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
+                    ))),
+                }],
+                r#where: None,
+                group_by: None,
+            }))
+        );
+
         let stmt = parse_stmt("select * from users u full join users u2 on u.id = u2.id;").unwrap();
 
         assert_eq!(
@@ -2570,7 +2599,8 @@ mod tests {
             }))
         );
 
-        let stmt = parse_stmt(r#"
+        let stmt = parse_stmt(
+            r#"
         WITH t1 AS (
             SELECT * FROM users
         ),
@@ -2578,7 +2608,9 @@ mod tests {
             SELECT * FROM pepole
         )
         SELECT * FROM t1,t2;
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         assert_eq!(
             stmt,
