@@ -325,23 +325,24 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let limit = if self
-            .next_if_token(TokenType::Keyword(Keyword::Limit))
-            .is_some()
-        {
-            Some(self.parse_expression(0)?)
-        } else {
-            None
-        };
+        let mut limit = None;
+        let mut offset = None;
 
-        let offset = if self
-            .next_if_token(TokenType::Keyword(Keyword::Offset))
-            .is_some()
-        {
-            Some(self.parse_expression(0)?)
-        } else {
-            None
-        };
+        for _ in 0..2 {
+            if self
+                .next_if_token(TokenType::Keyword(Keyword::Limit))
+                .is_some()
+            {
+                limit = Some(self.parse_expression(0)?);
+            }
+
+            if self
+                .next_if_token(TokenType::Keyword(Keyword::Offset))
+                .is_some()
+            {
+                offset = Some(self.parse_expression(0)?)
+            }
+        }
 
         Ok(Select {
             with: None,
@@ -2244,6 +2245,27 @@ mod tests {
         );
 
         let stmt = parse_stmt("SELECT * FROM users LIMIT 10 OFFSET 10;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Select(Box::new(Select {
+                with: None,
+                order_by: None,
+                limit: Some(ast::Expression::Literal(ast::Literal::Int(10))),
+                offset: Some(ast::Expression::Literal(ast::Literal::Int(10))),
+                having: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: vec![ast::From::Table {
+                    name: String::from("users"),
+                    alias: None,
+                }],
+                r#where: None,
+                group_by: None,
+            }))
+        );
+
+        let stmt = parse_stmt("SELECT * FROM users OFFSET 10 LIMIT 10;").unwrap();
 
         assert_eq!(
             stmt,
