@@ -40,3 +40,12 @@ generate_error_enum! {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::ParseIntError(e, _) => Some(e),
+            _ => None,
+        }
+    }
+}
