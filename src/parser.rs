@@ -121,8 +121,38 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        // parse query
+        let query = if self
+            .next_if_token(TokenType::Keyword(Keyword::As))
+            .is_some()
+        {
+            if self
+                .next_if_token(TokenType::Keyword(Keyword::Select))
+                .is_some()
+            {
+                Some(self.parse_select()?)
+            } else {
+                self.next_except(TokenType::Keyword(Keyword::From))?;
+                let table = self.parse_table_reference()?;
+                Some(Select {
+                    with: None,
+                    distinct: None,
+                    columns: vec![],
+                    from: vec![table],
+                    r#where: None,
+                    group_by: None,
+                    having: None,
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                })
+            }
+        } else {
+            None
+        };
 
         Ok(Statement::CreateTable {
+            query,
             table,
             columns,
             check_exists,
@@ -1054,7 +1084,7 @@ mod tests {
     use std::vec;
 
     use super::Parser;
-    use crate::ast::{self, Expression, Select, SelectItem, Statement};
+    use crate::ast::{self, Assignment, Expression, Select, SelectItem, Statement};
     use crate::datatype::DataType;
     use crate::error::Result;
 
@@ -1080,6 +1110,7 @@ mod tests {
         assert_eq!(
             stmt,
             Statement::CreateTable {
+                query: None,
                 table: "t1".to_owned(),
                 columns: vec![
                     ast::Column {
@@ -1110,6 +1141,7 @@ mod tests {
         assert_eq!(
             stmt,
             Statement::CreateTable {
+                query: None,
                 table: "t1".to_owned(),
                 columns: vec![
                     ast::Column {
@@ -1140,6 +1172,7 @@ mod tests {
         assert_eq!(
             stmt,
             Statement::CreateTable {
+                query: None,
                 table: "t1".to_owned(),
                 columns: vec![
                     ast::Column {
@@ -1170,6 +1203,7 @@ mod tests {
         assert_eq!(
             stmt,
             Statement::CreateTable {
+                query: None,
                 table: "t1".to_owned(),
                 columns: vec![
                     ast::Column {
@@ -1200,6 +1234,7 @@ mod tests {
         assert_eq!(
             stmt,
             Statement::CreateTable {
+                query: None,
                 table: "t1".to_owned(),
                 columns: vec![
                     ast::Column {
@@ -1221,6 +1256,70 @@ mod tests {
                         index: false
                     },
                 ],
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE TABLE t1 AS SELECT * FROM read_csv('path/file.csv');")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                query: Some(Select {
+                    with: None,
+                    distinct: None,
+                    columns: vec![SelectItem::Wildcard],
+                    from: vec![ast::From::TableFunction {
+                        name: "read_csv".to_owned(),
+                        args: vec![Assignment {
+                            id: None,
+                            value: Expression::Literal(ast::Literal::String(
+                                "path/file.csv".to_owned()
+                            ))
+                        }],
+                        alias: None,
+                    }],
+                    r#where: None,
+                    group_by: None,
+                    having: None,
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                }),
+                table: "t1".to_owned(),
+                columns: vec![],
+                check_exists: false,
+            }
+        );
+
+        let stmt = parse_stmt("CREATE TABLE t1 AS FROM read_csv_auto ('path/file.csv');")?;
+
+        assert_eq!(
+            stmt,
+            Statement::CreateTable {
+                query: Some(Select {
+                    with: None,
+                    distinct: None,
+                    columns: vec![],
+                    from: vec![ast::From::TableFunction {
+                        name: "read_csv_auto".to_owned(),
+                        args: vec![Assignment {
+                            id: None,
+                            value: Expression::Literal(ast::Literal::String(
+                                "path/file.csv".to_owned()
+                            ))
+                        }],
+                        alias: None,
+                    }],
+                    r#where: None,
+                    group_by: None,
+                    having: None,
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                }),
+                table: "t1".to_owned(),
+                columns: vec![],
                 check_exists: false,
             }
         );

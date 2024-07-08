@@ -8,6 +8,7 @@ use crate::{datatype::DataType, error::Error};
 #[derive(PartialEq, Debug)]
 pub enum Statement {
     CreateTable {
+        query: Option<Select>,
         table: String,
         check_exists: bool,
         columns: Vec<Column>,
@@ -408,6 +409,7 @@ impl Display for Statement {
                 write!(f, "{}", schema)
             }
             Statement::CreateTable {
+                query,
                 table,
                 check_exists,
                 columns,
@@ -423,7 +425,11 @@ impl Display for Statement {
                     }
                     write!(f, "{}", c)?;
                 }
-                write!(f, ")")
+                write!(f, ")")?;
+                if let Some(q) = query {
+                    write!(f, " AS {}", q)?;
+                }
+                Ok(())
             }
             Statement::DropTable {
                 table,
