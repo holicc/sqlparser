@@ -137,7 +137,7 @@ impl<'a> Parser<'a> {
                 Some(Select {
                     with: None,
                     distinct: None,
-                    columns: vec![],
+                    columns: vec![SelectItem::Wildcard],
                     from: vec![table],
                     r#where: None,
                     group_by: None,
@@ -1300,7 +1300,7 @@ mod tests {
                 query: Some(Select {
                     with: None,
                     distinct: None,
-                    columns: vec![],
+                    columns: vec![SelectItem::Wildcard],
                     from: vec![ast::From::TableFunction {
                         name: "read_csv_auto".to_owned(),
                         args: vec![Assignment {
