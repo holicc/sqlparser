@@ -229,10 +229,8 @@ impl<'a> Parser<'a> {
     fn parse_insert_statement(&mut self) -> Result<Statement> {
         self.next_except(TokenType::Keyword(Keyword::Into))?;
 
-        let table_name = self.next_ident()?;
-
+        let table = self.next_ident()?;
         let alias = self.parse_alias()?;
-
         let columns = if self.next_if_token(TokenType::LParen).is_some() {
             let mut columns = vec![];
             loop {
@@ -247,10 +245,40 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+        let query = if self
+            .next_if_token(TokenType::Keyword(Keyword::Select))
+            .is_some()
+        {
+            Some(self.parse_select()?)
+        } else if self
+            .next_if_token(TokenType::Keyword(Keyword::From))
+            .is_some()
+        {
+            let table = self.parse_table_reference()?;
+            Some(Select {
+                with: None,
+                distinct: None,
+                columns: vec![SelectItem::Wildcard],
+                from: vec![table],
+                r#where: None,
+                group_by: None,
+                having: None,
+                order_by: None,
+                limit: None,
+                offset: None,
+            })
+        } else {
+            None
+        };
 
-        self.next_except(TokenType::Keyword(Keyword::Values))?;
-
-        let values = self.parse_values()?;
+        let values = if self
+            .next_if_token(TokenType::Keyword(Keyword::Values))
+            .is_some()
+        {
+            self.parse_values()?
+        } else {
+            vec![]
+        };
 
         let on_conflict = if self
             .next_if_token(TokenType::Keyword(Keyword::On))
@@ -271,7 +299,9 @@ impl<'a> Parser<'a> {
         };
 
         Ok(Statement::Insert {
-            table: (table_name, alias),
+            query,
+            table,
+            alias,
             columns,
             values,
             on_conflict,
@@ -1469,7 +1499,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: None,
                 values: vec![vec![
                     ast::Expression::Literal(ast::Literal::Int(1)),
@@ -1485,7 +1517,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1505,7 +1539,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1531,7 +1567,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1557,7 +1595,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1594,7 +1634,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1637,7 +1679,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1682,7 +1726,9 @@ mod tests {
         assert_eq!(
             stmt,
             ast::Statement::Insert {
-                table: (String::from("users"), None,),
+                query: None,
+                table: String::from("users"),
+                alias: None,
                 columns: Some(vec![
                     ast::Expression::Identifier("id".to_owned()),
                     ast::Expression::Identifier("name".to_owned()),
@@ -1721,6 +1767,101 @@ mod tests {
                         String::from("user_id")
                     ))
                 ]),
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO tbl SELECT * FROM other_tbl;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: String::from("tbl"),
+                alias: None,
+                columns: None,
+                values: vec![],
+                on_conflict: None,
+                returning: None,
+                query: Some(ast::Select {
+                    with: None,
+                    distinct: None,
+                    columns: vec![ast::SelectItem::Wildcard],
+                    from: vec![ast::From::Table {
+                        name: String::from("other_tbl"),
+                        alias: None,
+                    }],
+                    r#where: None,
+                    group_by: None,
+                    having: None,
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                }),
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO tbl FROM other_tbl;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: String::from("tbl"),
+                alias: None,
+                columns: None,
+                values: vec![],
+                on_conflict: None,
+                returning: None,
+                query: Some(ast::Select {
+                    with: None,
+                    distinct: None,
+                    columns: vec![ast::SelectItem::Wildcard],
+                    from: vec![ast::From::Table {
+                        name: String::from("other_tbl"),
+                        alias: None,
+                    }],
+                    r#where: None,
+                    group_by: None,
+                    having: None,
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                }),
+            }
+        );
+
+        let stmt = parse_stmt("INSERT INTO tbl(id,name) SELECT id,name FROM other_tbl;").unwrap();
+
+        assert_eq!(
+            stmt,
+            ast::Statement::Insert {
+                table: String::from("tbl"),
+                alias: None,
+                columns: Some(vec![
+                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("name".to_owned()),
+                ]),
+                values: vec![],
+                on_conflict: None,
+                returning: None,
+                query: Some(ast::Select {
+                    with: None,
+                    distinct: None,
+                    columns: vec![
+                        ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())),
+                        ast::SelectItem::UnNamedExpr(ast::Expression::Identifier(
+                            "name".to_owned()
+                        )),
+                    ],
+                    from: vec![ast::From::Table {
+                        name: String::from("other_tbl"),
+                        alias: None,
+                    }],
+                    r#where: None,
+                    group_by: None,
+                    having: None,
+                    order_by: None,
+                    limit: None,
+                    offset: None,
+                }),
             }
         );
     }

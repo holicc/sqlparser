@@ -27,11 +27,13 @@ pub enum Statement {
     },
     Select(Box<Select>),
     Insert {
-        table: (String, Option<String>),
+        table: String,
+        alias: Option<String>,
         columns: Option<Vec<Expression>>,
         values: Vec<Vec<Expression>>,
         on_conflict: Option<OnConflict>,
         returning: Option<Vec<SelectItem>>,
+        query: Option<Select>,
     },
     Update {
         table: String,
@@ -306,14 +308,16 @@ impl Display for Statement {
             Statement::Select(select) => write!(f, "{}", select),
             Statement::Insert {
                 table,
+                alias,
                 columns,
                 values,
                 on_conflict,
                 returning,
+                query,
             } => {
-                write!(f, "INSERT INTO {} ", table.0)?;
-                if let Some(a) = &table.1 {
-                    write!(f, "AS {} ", a)?;
+                write!(f, "INSERT INTO {} ", table,)?;
+                if let Some(a) = alias {
+                    write!(f, "AS {}", a)?;
                 }
                 if let Some(c) = columns {
                     write!(
@@ -342,20 +346,21 @@ impl Display for Statement {
                         .collect::<Vec<String>>()
                         .join(", ")
                 )?;
-
                 if let Some(o) = on_conflict {
-                    write!(f, " ON CONFLICT {}", o)?;
+                    write!(f, " {}", o)?;
                 }
-
                 if let Some(r) = returning {
                     write!(
                         f,
                         " RETURNING {}",
                         r.iter()
-                            .map(|item| item.to_string())
+                            .map(|r| r.to_string())
                             .collect::<Vec<String>>()
                             .join(", ")
                     )?;
+                }
+                if let Some(q) = query {
+                    write!(f, " {}", q)?;
                 }
                 Ok(())
             }
