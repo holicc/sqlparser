@@ -7,18 +7,18 @@ use crate::{
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
 };
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     /// all relations in the query
-    pub relations: HashSet<String>,
+    pub relations: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(sql: &'a str) -> Parser<'a> {
         Parser {
-            relations: HashSet::new(),
+            relations: Vec::new(),
             lexer: Lexer::new(sql),
         }
     }
@@ -745,7 +745,7 @@ impl<'a> Parser<'a> {
         let alias = self.parse_alias()?;
 
         if !is_table_function {
-            self.relations.insert(table_name.clone());
+            self.relations.push(table_name.clone());
         }
 
         if is_table_function {
