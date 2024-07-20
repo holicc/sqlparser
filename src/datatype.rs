@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 /// A datatype
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq)]
 pub enum DataType {
     Boolean,
     Integer,

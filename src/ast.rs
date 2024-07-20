@@ -5,7 +5,7 @@ use std::{
 
 use crate::{datatype::DataType, error::Error};
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Statement {
     CreateTable {
         query: Option<Select>,
@@ -46,7 +46,7 @@ pub enum Statement {
     },
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Select {
     pub with: Option<With>,
     pub distinct: Option<Distinct>,
@@ -135,7 +135,7 @@ impl Display for Select {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct With {
     pub recursive: bool,
     pub cte_tables: Vec<Cte>,
@@ -155,7 +155,7 @@ impl Display for With {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Cte {
     pub alias: String,
     pub query: Box<Select>,
@@ -167,7 +167,7 @@ impl Display for Cte {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum SelectItem {
     /// expression without alias eg. `SELECT 1`
     UnNamedExpr(Expression),
@@ -190,7 +190,7 @@ impl Display for SelectItem {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Column {
     pub name: String,
     pub datatype: DataType,
@@ -225,7 +225,7 @@ impl Display for Column {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum OnConflict {
     DoNothing,
     /// `ON CONFLICT (constraint) DO UPDATE SET values[expressions]`
@@ -235,7 +235,7 @@ pub enum OnConflict {
     },
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Ident {
     pub value: String,
     pub quote_style: Option<char>,
@@ -250,7 +250,7 @@ impl Display for Ident {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Order {
     Asc,
     Desc,
@@ -447,14 +447,14 @@ impl Display for Statement {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 
 pub enum Distinct {
     ALL,
     DISTINCT(Vec<Expression>),
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 
 pub enum From {
     Table {
@@ -534,7 +534,7 @@ impl Display for From {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum JoinType {
     Cross,
     Inner,
@@ -543,7 +543,7 @@ pub enum JoinType {
     Right,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Expression {
     Identifier(String),
     Literal(Literal),
@@ -631,13 +631,13 @@ impl Display for Expression {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct StructField {
     pub name: Expression,
     pub value: Expression,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Assignment {
     pub id: Option<Ident>,
     pub value: Expression,
@@ -652,7 +652,7 @@ impl Display for Assignment {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Literal {
     Int(i64),
     Float(f64),
@@ -729,7 +729,7 @@ impl TryInto<bool> for Literal {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum BinaryOperator {
     // Logical
     Not(Box<Expression>),
