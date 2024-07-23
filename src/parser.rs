@@ -620,17 +620,29 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            columns.push(match expr {
-                Expression::Identifier(ref ident) => {
-                    if ident == "*" && alias.is_none() {
-                        SelectItem::Wildcard
-                    } else if ident.contains(".") && ident.ends_with('*') {
+
+            let col = match expr {
+                Expression::CompoundIdentifier(ref idents) => {
+                    if idents.last().filter(|a| a.value == "*").is_some() {
                         SelectItem::QualifiedWildcard(
-                            ident
-                                .split('.')
-                                .filter_map(|s| if s == "*" { None } else { Some(s.to_owned()) })
+                            idents
+                                .iter()
+                                .filter_map(|i| {
+                                    if i.value == "*" {
+                                        None
+                                    } else {
+                                        Some(i.value.clone())
+                                    }
+                                })
                                 .collect(),
                         )
+                    } else {
+                        SelectItem::UnNamedExpr(expr)
+                    }
+                }
+                Expression::Identifier(ref ident) => {
+                    if ident.value == "*" && alias.is_none() {
+                        SelectItem::Wildcard
                     } else if alias.is_some() {
                         SelectItem::ExprWithAlias(expr, alias.unwrap())
                     } else {
@@ -644,8 +656,10 @@ impl<'a> Parser<'a> {
                     Some(a) => SelectItem::ExprWithAlias(expr, a),
                     None => SelectItem::UnNamedExpr(expr),
                 },
-                _ => unreachable!("column name should be a identifier"),
-            });
+                _ => unreachable!("column name should be a identifier, but got [{:?}]", expr),
+            };
+
+            columns.push(col);
 
             if self.next_if_token(TokenType::Comma).is_none() {
                 break;
@@ -839,16 +853,18 @@ impl<'a> Parser<'a> {
                     }
                     Ok(ast::Expression::Function(literal, args))
                 } else {
-                    let mut literal = literal;
-                    // FIXME: try to parse table.column but should be a Identifier right?
-                    while let Some(p) = self.next_if_token(TokenType::Period) {
-                        literal.push_str(&p.literal);
-                        literal.push_str(&self.next_ident()?);
+                    let mut idents: Vec<Ident> = vec![literal.into()];
+                    while self.next_if_token(TokenType::Period).is_some() {
+                        idents.push(self.next_ident().map(|s| s.into())?);
                     }
-                    Ok(ast::Expression::Identifier(literal))
+                    if idents.len() > 1 {
+                        Ok(ast::Expression::CompoundIdentifier(idents))
+                    } else {
+                        Ok(ast::Expression::Identifier(idents.remove(0)))
+                    }
                 }
             }
-            TokenType::Asterisk => Ok(ast::Expression::Identifier(literal)),
+            TokenType::Asterisk => Ok(ast::Expression::Identifier("*".into())),
             TokenType::Int => literal
                 .parse()
                 .map(|i| ast::Expression::Literal(ast::Literal::Int(i)))
@@ -1433,7 +1449,7 @@ mod tests {
             Statement::Delete {
                 table: "users".to_owned(),
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                    Box::new(Expression::Identifier("id".to_owned())),
+                    Box::new(Expression::Identifier("id".into())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
             }
@@ -1469,7 +1485,7 @@ mod tests {
                     ast::Expression::Literal(ast::Literal::String("name".to_owned()))
                 )]),
                 r#where: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                    Box::new(ast::Expression::Identifier("id".to_owned())),
+                    Box::new(ast::Expression::Identifier("id".into())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                 ))),
             }
@@ -1492,7 +1508,7 @@ mod tests {
                     ),
                 ]),
                 r#where: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                    Box::new(ast::Expression::Identifier("id".to_owned())),
+                    Box::new(ast::Expression::Identifier("id".into())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                 ))),
             }
@@ -1528,8 +1544,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![vec![
                     ast::Expression::Literal(ast::Literal::Int(1)),
@@ -1550,8 +1566,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![
                     vec![
@@ -1578,8 +1594,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![
                     vec![
@@ -1606,8 +1622,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![
                     vec![
@@ -1625,7 +1641,7 @@ mod tests {
                         quote_style: None,
                     }],
                     values: vec![ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(ast::Expression::Identifier("name".to_owned())),
+                        Box::new(ast::Expression::Identifier("name".into())),
                         Box::new(ast::Expression::Literal(ast::Literal::String(
                             "name".to_owned()
                         ))),
@@ -1645,8 +1661,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![
                     vec![
@@ -1665,13 +1681,13 @@ mod tests {
                     }],
                     values: vec![
                         ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                            Box::new(ast::Expression::Identifier("name".to_owned())),
+                            Box::new(ast::Expression::Identifier("name".into())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
                         ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                            Box::new(ast::Expression::Identifier("id".to_owned())),
+                            Box::new(ast::Expression::Identifier("id".into())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
                     ],
@@ -1690,8 +1706,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![
                     vec![
@@ -1710,19 +1726,19 @@ mod tests {
                     }],
                     values: vec![
                         ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                            Box::new(ast::Expression::Identifier("name".to_owned())),
+                            Box::new(ast::Expression::Identifier("name".into())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
                         ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                            Box::new(ast::Expression::Identifier("id".to_owned())),
+                            Box::new(ast::Expression::Identifier("id".into())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
                     ],
                 }),
                 returning: Some(vec![
-                    (ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())))
+                    (ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("id".into())))
                 ]),
             }
         );
@@ -1737,8 +1753,8 @@ mod tests {
                 table: String::from("users"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![
                     vec![
@@ -1757,20 +1773,20 @@ mod tests {
                     }],
                     values: vec![
                         ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                            Box::new(ast::Expression::Identifier("name".to_owned())),
+                            Box::new(ast::Expression::Identifier("name".into())),
                             Box::new(ast::Expression::Literal(ast::Literal::String(
                                 "name".to_owned()
                             ))),
                         )),
                         ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                            Box::new(ast::Expression::Identifier("id".to_owned())),
+                            Box::new(ast::Expression::Identifier("id".into())),
                             Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
                         )),
                     ],
                 }),
                 returning: Some(vec![
                     (ast::SelectItem::ExprWithAlias(
-                        ast::Expression::Identifier("id".to_owned()),
+                        ast::Expression::Identifier("id".into()),
                         String::from("user_id")
                     ))
                 ]),
@@ -1843,8 +1859,8 @@ mod tests {
                 table: String::from("tbl"),
                 alias: None,
                 columns: Some(vec![
-                    ast::Expression::Identifier("id".to_owned()),
-                    ast::Expression::Identifier("name".to_owned()),
+                    ast::Expression::Identifier("id".into()),
+                    ast::Expression::Identifier("name".into()),
                 ]),
                 values: vec![],
                 on_conflict: None,
@@ -1853,10 +1869,8 @@ mod tests {
                     with: None,
                     distinct: None,
                     columns: vec![
-                        ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())),
-                        ast::SelectItem::UnNamedExpr(ast::Expression::Identifier(
-                            "name".to_owned()
-                        )),
+                        ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("id".into())),
+                        ast::SelectItem::UnNamedExpr(ast::Expression::Identifier("name".into())),
                     ],
                     from: vec![ast::From::Table {
                         name: String::from("other_tbl"),
@@ -1927,8 +1941,11 @@ mod tests {
                 offset: None,
                 distinct: None,
                 columns: vec![
-                    SelectItem::UnNamedExpr(ast::Expression::Identifier("id".to_owned())),
-                    SelectItem::UnNamedExpr(ast::Expression::Identifier("t.id".to_owned())),
+                    SelectItem::UnNamedExpr(ast::Expression::Identifier("id".into())),
+                    SelectItem::UnNamedExpr(ast::Expression::CompoundIdentifier(vec![
+                        "t".into(),
+                        "id".into()
+                    ])),
                 ],
                 from: vec![ast::From::Table {
                     name: String::from("test"),
@@ -2133,8 +2150,14 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
-                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u".into(),
+                            "id".into()
+                        ])),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u2".into(),
+                            "id".into()
+                        ])),
                     ))),
                 }],
                 r#where: None,
@@ -2165,8 +2188,14 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
-                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u".into(),
+                            "id".into()
+                        ])),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u2".into(),
+                            "id".into()
+                        ])),
                     ))),
                 }],
                 r#where: None,
@@ -2198,8 +2227,14 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
-                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u".into(),
+                            "id".into()
+                        ])),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u2".into(),
+                            "id".into()
+                        ])),
                     ))),
                 }],
                 r#where: None,
@@ -2231,8 +2266,14 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
-                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u".into(),
+                            "id".into()
+                        ])),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u2".into(),
+                            "id".into()
+                        ])),
                     ))),
                 }],
                 r#where: None,
@@ -2263,8 +2304,14 @@ mod tests {
                         alias: Some(String::from("u2")),
                     }),
                     on: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(ast::Expression::Identifier("u.id".to_owned())),
-                        Box::new(ast::Expression::Identifier("u2.id".to_owned())),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u".into(),
+                            "id".into()
+                        ])),
+                        Box::new(ast::Expression::CompoundIdentifier(vec![
+                            "u2".into(),
+                            "id".into()
+                        ])),
                     ))),
                 }],
                 r#where: None,
@@ -2338,7 +2385,7 @@ mod tests {
             ast::Statement::Select(Box::new(Select {
                 with: None,
                 order_by: Some(vec![(
-                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("id".into()),
                     ast::Order::Asc,
                 )]),
                 limit: None,
@@ -2362,7 +2409,7 @@ mod tests {
             ast::Statement::Select(Box::new(Select {
                 with: None,
                 order_by: Some(vec![(
-                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("id".into()),
                     ast::Order::Asc,
                 )]),
                 limit: None,
@@ -2386,18 +2433,9 @@ mod tests {
             ast::Statement::Select(Box::new(Select {
                 with: None,
                 order_by: Some(vec![
-                    (
-                        ast::Expression::Identifier("id".to_owned()),
-                        ast::Order::Asc,
-                    ),
-                    (
-                        ast::Expression::Identifier("name".to_owned()),
-                        ast::Order::Asc,
-                    ),
-                    (
-                        ast::Expression::Identifier("age".to_owned()),
-                        ast::Order::Asc,
-                    ),
+                    (ast::Expression::Identifier("id".into()), ast::Order::Asc,),
+                    (ast::Expression::Identifier("name".into()), ast::Order::Asc,),
+                    (ast::Expression::Identifier("age".into()), ast::Order::Asc,),
                 ]),
                 limit: None,
                 offset: None,
@@ -2420,7 +2458,7 @@ mod tests {
             ast::Statement::Select(Box::new(Select {
                 with: None,
                 order_by: Some(vec![(
-                    ast::Expression::Identifier("id".to_owned()),
+                    ast::Expression::Identifier("id".into()),
                     ast::Order::Desc,
                 )]),
                 limit: None,
@@ -2444,14 +2482,8 @@ mod tests {
             ast::Statement::Select(Box::new(Select {
                 with: None,
                 order_by: Some(vec![
-                    (
-                        ast::Expression::Identifier("id".to_owned()),
-                        ast::Order::Desc,
-                    ),
-                    (
-                        ast::Expression::Identifier("name".to_owned()),
-                        ast::Order::Asc,
-                    ),
+                    (ast::Expression::Identifier("id".into()), ast::Order::Desc,),
+                    (ast::Expression::Identifier("name".into()), ast::Order::Asc,),
                 ]),
                 limit: None,
                 offset: None,
@@ -2568,11 +2600,11 @@ mod tests {
                 offset: None,
                 having: None,
                 distinct: Some(ast::Distinct::DISTINCT(vec![
-                    ast::Expression::Identifier("name".to_owned()),
-                    ast::Expression::Identifier("age".to_owned()),
+                    ast::Expression::Identifier("name".into()),
+                    ast::Expression::Identifier("age".into()),
                 ])),
                 columns: vec![SelectItem::UnNamedExpr(ast::Expression::Identifier(
-                    "school".to_owned()
+                    "school".into()
                 ))],
                 from: vec![ast::From::Table {
                     name: String::from("users"),
@@ -2602,7 +2634,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                    Box::new(Expression::Identifier("id".to_owned())),
+                    Box::new(Expression::Identifier("id".into())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
                 group_by: None,
@@ -2627,11 +2659,11 @@ mod tests {
                 }],
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::And(
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(Expression::Identifier("id".to_owned())),
+                        Box::new(Expression::Identifier("id".into())),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(Expression::Identifier("name".to_owned())),
+                        Box::new(Expression::Identifier("name".into())),
                         Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
                     ))),
                 ))),
@@ -2657,11 +2689,11 @@ mod tests {
                 }],
                 r#where: Some(Expression::BinaryOperator(ast::BinaryOperator::Or(
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(Expression::Identifier("id".to_owned())),
+                        Box::new(Expression::Identifier("id".into())),
                         Box::new(Expression::Literal(ast::Literal::Int(1))),
                     ))),
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                        Box::new(Expression::Identifier("name".to_owned())),
+                        Box::new(Expression::Identifier("name".into())),
                         Box::new(Expression::Literal(ast::Literal::String("foo".to_owned()))),
                     ))),
                 ))),
@@ -2686,7 +2718,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Identifier("id".to_owned())),
+                    field: Box::new(Expression::Identifier("id".into())),
                     list: vec![
                         Expression::Literal(ast::Literal::Int(1)),
                         Expression::Literal(ast::Literal::Int(2)),
@@ -2715,7 +2747,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Identifier("id".to_owned())),
+                    field: Box::new(Expression::Identifier("id".into())),
                     list: vec![
                         Expression::Literal(ast::Literal::Int(1)),
                         Expression::Literal(ast::Literal::Int(2)),
@@ -2744,7 +2776,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Identifier("id".to_owned())),
+                    field: Box::new(Expression::Identifier("id".into())),
                     list: vec![
                         Expression::Literal(ast::Literal::String("1".to_owned())),
                         Expression::Literal(ast::Literal::String("2".to_owned())),
@@ -2772,7 +2804,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: Some(Expression::InList {
-                    field: Box::new(Expression::Identifier("id".to_owned())),
+                    field: Box::new(Expression::Identifier("id".into())),
                     list: vec![
                         Expression::Literal(ast::Literal::String("1".to_owned())),
                         Expression::Literal(ast::Literal::String("2".to_owned())),
@@ -2800,7 +2832,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: Some(Expression::InSubQuery {
-                    field: Box::new(Expression::Identifier("id".to_owned())),
+                    field: Box::new(Expression::Identifier("id".into())),
                     query: Box::new(ast::Statement::Select(Box::new(Select {
                         with: None,
                         order_by: None,
@@ -2808,9 +2840,7 @@ mod tests {
                         offset: None,
                         having: None,
                         distinct: None,
-                        columns: vec![SelectItem::UnNamedExpr(Expression::Identifier(
-                            "id".to_owned()
-                        ))],
+                        columns: vec![SelectItem::UnNamedExpr(Expression::Identifier("id".into()))],
                         from: vec![ast::From::Table {
                             name: String::from("users"),
                             alias: None,
@@ -2966,7 +2996,7 @@ mod tests {
                     alias: None,
                 }],
                 r#where: None,
-                group_by: Some(vec![Expression::Identifier("id".to_owned())]),
+                group_by: Some(vec![Expression::Identifier("id".into())]),
             }))
         );
 
@@ -2988,8 +3018,8 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: Some(vec![
-                    Expression::Identifier("id".to_owned()),
-                    Expression::Identifier("name".to_owned()),
+                    Expression::Identifier("id".into()),
+                    Expression::Identifier("name".into()),
                 ]),
             }))
         );
@@ -3004,7 +3034,7 @@ mod tests {
                 limit: None,
                 offset: None,
                 having: Some(Expression::BinaryOperator(ast::BinaryOperator::Eq(
-                    Box::new(Expression::Identifier("id".to_owned())),
+                    Box::new(Expression::Identifier("id".into())),
                     Box::new(Expression::Literal(ast::Literal::Int(1))),
                 ))),
                 distinct: None,
@@ -3015,8 +3045,8 @@ mod tests {
                 }],
                 r#where: None,
                 group_by: Some(vec![
-                    Expression::Identifier("id".to_owned()),
-                    Expression::Identifier("name".to_owned()),
+                    Expression::Identifier("id".into()),
+                    Expression::Identifier("name".into()),
                 ]),
             }))
         );
@@ -3089,7 +3119,7 @@ mod tests {
     fn test_parse_ident() {
         let stmt = parse_expr("foobar").unwrap();
 
-        assert_eq!(stmt, Expression::Identifier("foobar".to_owned()));
+        assert_eq!(stmt, Expression::Identifier("foobar".into()));
 
         let stmt = parse_stmt("SELECT 1").unwrap();
 
@@ -3118,9 +3148,7 @@ mod tests {
             Statement::Select(Box::new(Select {
                 with: None,
                 distinct: None,
-                columns: vec![SelectItem::UnNamedExpr(Expression::Identifier(
-                    "id".to_owned()
-                ))],
+                columns: vec![SelectItem::UnNamedExpr(Expression::Identifier("id".into()))],
                 from: vec![],
                 r#where: None,
                 group_by: None,
@@ -3287,18 +3315,18 @@ mod tests {
                 "-a * b",
                 Expression::BinaryOperator(ast::BinaryOperator::Mul(
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Neg(
-                        Box::new(Expression::Identifier("a".to_owned())),
+                        Box::new(Expression::Identifier("a".into())),
                     ))),
-                    Box::new(Expression::Identifier("b".to_owned())),
+                    Box::new(Expression::Identifier("b".into())),
                 )),
             ),
             (
                 "a + b * c",
                 Expression::BinaryOperator(ast::BinaryOperator::Add(
-                    Box::new(Expression::Identifier("a".to_owned())),
+                    Box::new(Expression::Identifier("a".into())),
                     Box::new(Expression::BinaryOperator(ast::BinaryOperator::Mul(
-                        Box::new(Expression::Identifier("b".to_owned())),
-                        Box::new(Expression::Identifier("c".to_owned())),
+                        Box::new(Expression::Identifier("b".into())),
+                        Box::new(Expression::Identifier("c".into())),
                     ))),
                 )),
             ),

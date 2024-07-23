@@ -241,6 +241,24 @@ pub struct Ident {
     pub quote_style: Option<char>,
 }
 
+impl std::convert::From<String> for Ident {
+    fn from(value: String) -> Self {
+        Ident {
+            value,
+            quote_style: None,
+        }
+    }
+}
+
+impl std::convert::From<&str> for Ident {
+    fn from(value: &str) -> Self {
+        Ident {
+            value: value.to_string(),
+            quote_style: None,
+        }
+    }
+}
+
 impl Display for Ident {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.quote_style {
@@ -545,7 +563,10 @@ pub enum JoinType {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expression {
-    Identifier(String),
+    /// single identifier eg. `table` or `column`
+    Identifier(Ident),
+    /// multiple identifiers eg. `table.column`
+    CompoundIdentifier(Vec<Ident>),
     Literal(Literal),
     BinaryOperator(BinaryOperator),
     Function(String, Vec<Expression>),
@@ -626,6 +647,15 @@ impl Display for Expression {
                     .map(|e| e.to_string())
                     .collect::<Vec<String>>()
                     .join(", ")
+            ),
+            Expression::CompoundIdentifier(idents) => write!(
+                f,
+                "{}",
+                idents
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<String>>()
+                    .join(".")
             ),
         }
     }
