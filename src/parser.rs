@@ -1,13 +1,12 @@
 use crate::{
     ast::{
-        self, Assignment, Cte, Expression, Ident, OnConflict, Order, Select, SelectItem, Statement,
-        StructField, With,
+        self, Assignment, Cte, Expression, FunctionArgument, Ident, OnConflict, Order, Select,
+        SelectItem, Statement, StructField, With,
     },
     error::{Error, Result},
     lexer::Lexer,
     token::{Keyword, Token, TokenType},
 };
-use std::collections::BTreeMap;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -194,24 +193,7 @@ impl<'a> Parser<'a> {
 
         self.next_except(TokenType::Keyword(Keyword::Set))?;
 
-        let mut assignments = BTreeMap::new();
-        loop {
-            let column = self.next_ident()?;
-
-            self.next_except(TokenType::Eq)?;
-
-            let value = self.parse_expression(0)?;
-
-            if assignments.contains_key(&column) {
-                return Err(Error::DuplicateColumn(column));
-            }
-
-            assignments.insert(column, value);
-
-            if self.next_if_token(TokenType::Comma).is_none() {
-                break;
-            }
-        }
+        let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
 
         let r#where = if self
             .next_if_token(TokenType::Keyword(Keyword::Where))
@@ -751,7 +733,7 @@ impl<'a> Parser<'a> {
         if self.next_if_token(TokenType::LParen).is_some() {
             is_table_function = true;
             while self.next_if_token(TokenType::RParen).is_none() {
-                args.push(self.parse_assignment()?);
+                args.push(self.parse_function_argument()?);
                 self.next_if_token(TokenType::Comma);
             }
         }
@@ -912,15 +894,38 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_assignment(&mut self) -> Result<Assignment> {
+        let target = self.parse_comma_separated(Parser::parse_ident)?;
+        self.next_except(TokenType::Eq)?;
+        let value = self.parse_expression(0)?;
+        Ok(Assignment { target, value })
+    }
+
+    fn parse_comma_separated<T, F>(&mut self, mut f: F) -> Result<Vec<T>>
+    where
+        F: FnMut(&mut Self) -> Result<T>,
+    {
+        let mut items = vec![];
+        loop {
+            items.push(f(self)?);
+
+            if self.next_if_token(TokenType::Comma).is_none() {
+                break;
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn parse_function_argument(&mut self) -> Result<FunctionArgument> {
         let token = self.next_token()?;
         match token.token_type {
-            TokenType::String => Ok(Assignment {
+            TokenType::String => Ok(FunctionArgument {
                 id: None,
                 value: Expression::Literal(ast::Literal::String(token.literal)),
             }),
             TokenType::Ident => {
                 self.next_except(TokenType::Eq)?;
-                Ok(Assignment {
+                Ok(FunctionArgument {
                     id: Some(Ident {
                         value: token.literal,
                         quote_style: None,
@@ -1133,11 +1138,12 @@ impl InfixOperator {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::vec;
 
     use super::Parser;
-    use crate::ast::{self, Assignment, Expression, Select, SelectItem, Statement};
+    use crate::ast::{
+        self, Assignment, Expression, FunctionArgument, Select, SelectItem, Statement,
+    };
     use crate::datatype::DataType;
     use crate::error::Result;
 
@@ -1324,7 +1330,7 @@ mod tests {
                     columns: vec![SelectItem::Wildcard],
                     from: vec![ast::From::TableFunction {
                         name: "read_csv".to_owned(),
-                        args: vec![Assignment {
+                        args: vec![FunctionArgument {
                             id: None,
                             value: Expression::Literal(ast::Literal::String(
                                 "path/file.csv".to_owned()
@@ -1356,7 +1362,7 @@ mod tests {
                     columns: vec![SelectItem::Wildcard],
                     from: vec![ast::From::TableFunction {
                         name: "read_csv_auto".to_owned(),
-                        args: vec![Assignment {
+                        args: vec![FunctionArgument {
                             id: None,
                             value: Expression::Literal(ast::Literal::String(
                                 "path/file.csv".to_owned()
@@ -1466,10 +1472,10 @@ mod tests {
             stmt,
             ast::Statement::Update {
                 table: "users".to_owned(),
-                assignments: BTreeMap::from([(
-                    "name".to_owned(),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned()))
-                )]),
+                assignments: vec![Assignment {
+                    target: vec!["name".into()],
+                    value: ast::Expression::Literal(ast::Literal::String("name".to_owned()))
+                }],
                 r#where: None,
             }
         );
@@ -1480,10 +1486,10 @@ mod tests {
             stmt,
             ast::Statement::Update {
                 table: "users".to_owned(),
-                assignments: BTreeMap::from([(
-                    "name".to_owned(),
-                    ast::Expression::Literal(ast::Literal::String("name".to_owned()))
-                )]),
+                assignments: vec![Assignment {
+                    target: vec!["name".into()],
+                    value: ast::Expression::Literal(ast::Literal::String("name".to_owned()))
+                }],
                 r#where: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(ast::Expression::Identifier("id".into())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
@@ -1497,16 +1503,16 @@ mod tests {
             stmt,
             ast::Statement::Update {
                 table: "users".to_owned(),
-                assignments: BTreeMap::from([
-                    (
-                        "name".to_owned(),
-                        ast::Expression::Literal(ast::Literal::String("name".to_owned()))
-                    ),
-                    (
-                        "id".to_owned(),
-                        ast::Expression::Literal(ast::Literal::Int(1))
-                    ),
-                ]),
+                assignments: vec![
+                    Assignment {
+                        target: vec!["name".into()],
+                        value: ast::Expression::Literal(ast::Literal::String("name".to_owned()))
+                    },
+                    Assignment {
+                        target: vec!["id".into()],
+                        value: ast::Expression::Literal(ast::Literal::Int(1))
+                    },
+                ],
                 r#where: Some(ast::Expression::BinaryOperator(ast::BinaryOperator::Eq(
                     Box::new(ast::Expression::Identifier("id".into())),
                     Box::new(ast::Expression::Literal(ast::Literal::Int(1))),
@@ -1995,27 +2001,27 @@ mod tests {
                 from: vec![ast::From::TableFunction {
                     name: String::from("read_csv"),
                     args: vec![
-                        ast::Assignment {
+                        ast::FunctionArgument {
                             id: None,
                             value: ast::Expression::Literal(ast::Literal::String(
                                 "./test.csv".to_owned()
                             )),
                         },
-                        ast::Assignment {
+                        ast::FunctionArgument {
                             id: Some(ast::Ident {
                                 value: "delim".to_owned(),
                                 quote_style: None,
                             }),
                             value: ast::Expression::Literal(ast::Literal::String("|".to_owned())),
                         },
-                        ast::Assignment {
+                        ast::FunctionArgument {
                             id: Some(ast::Ident {
                                 value: "header".to_owned(),
                                 quote_style: None,
                             }),
                             value: ast::Expression::Literal(ast::Literal::Boolean(true)),
                         },
-                        ast::Assignment {
+                        ast::FunctionArgument {
                             id: Some(ast::Ident {
                                 value: "columns".to_owned(),
                                 quote_style: None,
@@ -2029,7 +2035,7 @@ mod tests {
                                 )),
                             }]),
                         },
-                        ast::Assignment {
+                        ast::FunctionArgument {
                             id: Some(ast::Ident {
                                 value: "force_not_null".to_owned(),
                                 quote_style: None,

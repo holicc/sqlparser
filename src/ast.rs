@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fmt::{Display, Formatter},
-};
+use std::fmt::{Display, Formatter};
 
 use crate::{datatype::DataType, error::Error};
 
@@ -37,7 +34,7 @@ pub enum Statement {
     },
     Update {
         table: String,
-        assignments: BTreeMap<String, Expression>,
+        assignments: Vec<Assignment>,
         r#where: Option<Expression>,
     },
     Delete {
@@ -384,21 +381,25 @@ impl Display for Statement {
                 assignments,
                 r#where,
             } => {
-                write!(
-                    f,
-                    "UPDATE {} SET {}",
-                    table,
-                    assignments
-                        .into_iter()
-                        .map(|(k, v)| format!("{} = {}", k, v))
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )?;
-
-                if let Some(w) = r#where {
-                    write!(f, "WHERE {}", w)?;
+                write!(f, "UPDATE {} SET ", table)?;
+                for (i, a) in assignments.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(
+                        f,
+                        "{} = {}",
+                        a.target
+                            .iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<String>>()
+                            .join("."),
+                        a.value
+                    )?;
                 }
-
+                if let Some(w) = r#where {
+                    write!(f, " WHERE {}", w)?;
+                }
                 Ok(())
             }
             Statement::Delete { table, r#where } => {
@@ -481,7 +482,7 @@ pub enum From {
     },
     TableFunction {
         name: String,
-        args: Vec<Assignment>,
+        args: Vec<FunctionArgument>,
         alias: Option<String>,
     },
     SubQuery {
@@ -669,11 +670,17 @@ pub struct StructField {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Assignment {
+    pub target: Vec<Ident>,
+    pub value: Expression,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct FunctionArgument {
     pub id: Option<Ident>,
     pub value: Expression,
 }
 
-impl Display for Assignment {
+impl Display for FunctionArgument {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self.id {
             Some(id) => write!(f, "{} = {}", id, self.value),
